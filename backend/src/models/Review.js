@@ -1,35 +1,18 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { ref, options } = require("./_helpers");
 
-const reviewSchema = new Schema(
+const schema = new Schema(
   {
-    eventId: {
-      type: Schema.Types.ObjectId,
-      ref: "Event",
-      required: true,
-      index: true,
-    },
-    customerId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-    rating: {
-      type: Number,
-      required: true,
-      min: 1,
-      max: 5,
-    },
-    comment: {
-      type: String,
-      trim: true,
-    },
+    event_id: ref("Event", { required: true }),
+    user_id: ref("User", { required: true }),
+    ticket_id: ref("Ticket", { required: true }),
+    rating: { type: Number, required: true, min: 1, max: 5 },
+    comment: { type: String },
+    organizer_reply: { type: String },
+    created_at: { type: Date, default: Date.now, required: true },
   },
-  { timestamps: true },
+  options,
 );
 
-// One review per customer per event
-reviewSchema.index({ eventId: 1, customerId: 1 }, { unique: true });
-
-module.exports = mongoose.model("Review", reviewSchema);
+module.exports = mongoose.model("Review", schema, "reviews");

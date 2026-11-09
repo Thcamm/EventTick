@@ -1,257 +1,1165 @@
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  /* background-color: #f5f5f5; */
-}
+/* =========================================================
+   TICKETBOX-STYLE SEAT MAP & STANDING TICKET SELECTION
+   Matches Reference Screenshots (Images 4, 5, 6)
+   ========================================================= */
 
-.real-time-event-container {
+.tbx-booking-shell {
   display: flex;
-  height: 100vh;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #0e0f14;
+  color: #f3f4f6;
+  font-family: "Inter", "Segoe UI", sans-serif;
 }
 
-/* Left column: booking summary */
-.real-time-event-sidebar {
-  flex: 1;
-  /* 1/3 of screen */
-  background: #fff;
-  padding: 20px;
-  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
-}
-
-/* Right column: ticket chart */
-.real-time-event-main {
-  color: white;
-  flex: 1.5;
-  /* 2/3 of screen */
-  background: #151414;
-  padding: 30px;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
-  overflow-y: auto;
-}
-
-.real-time-event-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  margin-bottom: 20px;
-  color: black;
-}
-
-.real-time-event-title {
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-.real-time-event-table {
-  width: 100%;
-  border-collapse: collapse; /* ensures borders don’t double */
-}
-.payment-methods-container {
+.tbx-loading-screen,
+.tbx-stage-loading {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: 14px;
+  min-height: 75vh;
+  background-color: #0e0f14;
+  color: #d1d5db;
+}
+
+.tbx-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(45, 194, 116, 0.25);
+  border-top-color: #2dc274;
+  border-radius: 50%;
+  animation: tbx-spin 0.8s linear infinite;
+}
+
+@keyframes tbx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================================================
+   TOP HEADER BAR (IMAGE 6)
+   ← Trở về | Chọn vé | Chú thích chấm tròn
+   ========================================================= */
+.tbx-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 58px;
+  padding: 0 24px;
+  background-color: #16171d;
+  border-bottom: 1px solid #282a33;
+  flex-shrink: 0;
+}
+
+.tbx-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.tbx-back-link:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.tbx-back-arrow {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tbx-topbar-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: #2dc274;
+}
+
+.tbx-seat-legend-bar {
+  display: flex;
+  align-items: center;
   gap: 20px;
-  margin: 16px 0;
 }
 
-.payment-method-btn {
-  background: #fff;
-  border: 2px solid #007bff;
-  border-radius: 6px;
-  padding: 10px 20px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: 0.2s ease;
+.tbx-legend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #e5e7eb;
 }
 
-.payment-method-btn.selected {
-  background: #007bff;
-  color: #fff;
-}
-.real-time-event-table td,
-.real-time-event-table th {
-  border: 1px solid #ccc; /* thin gray line */
-  padding: 1px;
-  text-align: center;
+.tbx-circle-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
-.real-time-event-table th {
-  background-color: #451f1f; /* light gray header */
-  font-weight: bold;
+.tbx-circle-dot.available {
+  background-color: #ffffff;
 }
 
-.real-time-event-total {
-  font-weight: bold;
-  margin: 10px 0;
+.tbx-circle-dot.selected {
+  background-color: #2dc274;
 }
 
-.real-time-event-note {
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 15px;
+.tbx-circle-dot.unavailable {
+  background-color: #ef4444;
 }
 
-.real-time-event-ticket-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 15px 0;
-  font-family: Arial, sans-serif;
+@media (max-width: 768px) {
+  .tbx-topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  .tbx-seat-legend-bar {
+    width: 100%;
+    justify-content: center;
+    gap: 14px;
+  }
 }
 
-.real-time-event-ticket-table th,
-.real-time-event-ticket-table td {
-  padding: 10px;
-  border-bottom: 1px solid #ddd;
-  text-align: left;
+/* =========================================================
+   MAIN 2-COLUMN LAYOUT (LEFT STAGE + RIGHT SIDEBAR)
+   ========================================================= */
+.tbx-body-grid {
+  display: flex;
+  flex: 1;
+  min-height: calc(100vh - 58px);
+  overflow: hidden;
 }
 
-.real-time-event-ticket-table th {
-  background-color: #097b4e;
-  font-weight: bold;
+.tbx-main-stage {
+  flex: 1;
+  min-width: 0;
+  background-color: #0b0c10;
+  position: relative;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
-.real-time-event-button-submit-btn {
-  width: 100%;
-  padding: 12px;
-  background-color: #28a745;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 15px;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
+.tbx-sidebar {
+  width: 390px;
+  flex-shrink: 0;
+  background-color: #1f2026;
+  border-left: 1px solid #2e303a;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
-.real-time-event-button-adding-btn {
-  width: 100%;
-  padding: 12px;
-  background-color: #28a745;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 15px;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
+@media (max-width: 1080px) {
+  .tbx-body-grid {
+    flex-direction: column;
+    overflow: visible;
+  }
+  .tbx-sidebar {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #2e303a;
+  }
 }
 
-.real-time-event-button-submit-btn:hover {
-  background-color: #218838;
-}
-
-.real-time-event-counter {
+/* =========================================================
+   CHẾ ĐỘ 1: SƠ ĐỒ GHẾ NGỒI TƯƠNG TÁC (IMAGE 6)
+   ========================================================= */
+.tbx-seatmap-canvas-area {
+  position: relative;
+  flex: 1;
+  min-height: 620px;
+  overflow: hidden;
+  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: Arial, sans-serif;
+  padding: 40px 24px 64px;
+  user-select: none;
+  background: radial-gradient(circle at center, #14161f 0%, #090a0d 85%);
 }
 
-.real-time-event-button {
-  width: 23px;
-  height: 23px;
-  border: 2px solid #ccc;
-  background: #fff;
-  font-size: 20px;
-  cursor: pointer;
-  transition:
-    border-color 0.3s ease,
-    background-color 0.3s ease;
+.tbx-seatmap-canvas-area.dragging {
+  cursor: grabbing;
 }
 
-.real-time-event-button:hover {
-  background-color: #f0f0f0;
+/* Floating top-left vertical zoom/reset controls (Image 6) */
+.tbx-floating-controls {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background-color: #2c2d35;
+  border: 1px solid #3f414d;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
-.real-time-event-button.plus {
-  border-color: #28a745;
-  /* green */
-  color: #28a745;
-  font-weight: bold;
-}
-
-.real-time-event-button.minus {
-  border-color: #28a745;
-  /* green */
-  color: #28a745;
-  font-weight: bold;
-}
-
-.real-time-event-value {
-  width: 35px;
-  text-align: center;
-  font-size: 18px;
-  font-weight: bold;
-  border-top: 2px solid #ccc;
-  border-bottom: 2px solid #ccc;
-  line-height: 35px;
-  outline: none;
-}
-
-.real-time-event-section {
-  margin-top: 30px;
-}
-
-.real-time-event-button-delete-btn {
-  background-color: #175e45; /* red tone */
-  color: #fff; /* white text */
+.tbx-ctrl-btn {
+  width: 38px;
+  height: 38px;
+  background: transparent;
   border: none;
-  padding: 10px 18px;
+  border-bottom: 1px solid #3f414d;
+  color: #f3f4f6;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+
+.tbx-ctrl-btn:last-child {
+  border-bottom: none;
+}
+
+.tbx-ctrl-btn:hover {
+  background-color: #3d3f4a;
+  color: #2dc274;
+}
+
+/* Floating tier filter pills */
+.tbx-floating-tier-pills {
+  position: absolute;
+  top: 20px;
+  left: 74px;
+  right: 20px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.tbx-filter-pill {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(31, 32, 38, 0.9);
+  border: 1px solid #383a47;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tbx-filter-pill:hover,
+.tbx-filter-pill.active {
+  border-color: #2dc274;
+  color: #ffffff;
+  background: rgba(45, 194, 116, 0.2);
+}
+
+.tbx-filter-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.tbx-seatmap-transform {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  transition: transform 0.08s ease-out;
+}
+
+/* Khối STAGE (Image 6) */
+.tbx-stage-box {
+  width: 340px;
+  max-width: 85vw;
+  padding: 18px 24px;
+  background-color: #25262c;
+  border: 1px solid #383a45;
+  color: #6b7280;
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 5px;
+  text-align: center;
   border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Các khối khu vực tô màu chứa hàng ghế tròn (Image 6) */
+.tbx-zones-bowl {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 22px;
+  max-width: 960px;
+}
+
+.tbx-colored-zone-polygon {
+  position: relative;
+  background-color: var(--zone-fill, #a855f7);
+  padding: 18px 22px;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+/* Tạo độ nghiêng cánh cung nhẹ giống sơ đồ nhà hát / concert khi có nhiều khu */
+.tbx-zones-bowl.count-3 .tbx-colored-zone-polygon.zone-idx-1 {
+  transform: rotate(-4deg);
+}
+
+.tbx-zones-bowl.count-3 .tbx-colored-zone-polygon.zone-idx-2 {
+  transform: rotate(4deg);
+}
+
+.tbx-zone-watermark {
+  text-align: center;
   font-size: 14px;
-  font-weight: bold;
-  cursor: pointer;
-  transition:
-    background-color 0.3s ease,
-    transform 0.2s ease;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 12px;
 }
-.real-time-event-button-delete-btn:hover {
-  background-color: #2a7a3d; /* darker red on hover */
+
+.tbx-zone-rows-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  position: relative;
+  z-index: 2;
 }
-.back-to-event-detail-btn {
-  background-color: #4ca751; /* Green background */
-  border: none;
-  color: white; /* Text color */
-  padding: 12px 10px;
+
+.tbx-circle-seat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tbx-row-letter {
+  width: 18px;
   text-align: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.tbx-circle-seats-track {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Chấm tròn ghế: Trắng = Đang trống, Xanh = Đang chọn, Đỏ = Không chọn được (Image 6) */
+.tbx-seat-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(15, 23, 42, 0.35);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+  font-size: 9.5px;
+  font-weight: 800;
+}
+
+.tbx-seat-circle.available {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+.tbx-seat-circle.available:hover {
+  transform: scale(1.22);
+  box-shadow: 0 0 0 3px rgba(45, 194, 116, 0.65);
+}
+
+.tbx-seat-circle.selected {
+  background-color: #2dc274;
+  border-color: #ffffff;
+  color: #ffffff;
+  transform: scale(1.15);
+  box-shadow: 0 0 10px rgba(45, 194, 116, 0.85);
+}
+
+.tbx-seat-circle.unavailable {
+  background-color: #ef4444;
+  border-color: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: not-allowed;
+}
+
+.tbx-seat-circle-num {
+  line-height: 1;
+}
+
+.tbx-foh-block {
+  width: 180px;
+  padding: 10px 16px;
+  background-color: #25262c;
+  border: 1px solid #3b3d47;
+  color: #9ca3af;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-align: center;
+  border-radius: 6px;
+}
+
+.tbx-hover-status-pill {
+  position: absolute;
+  bottom: 16px;
+  left: 20px;
+  z-index: 20;
+  background: rgba(22, 23, 29, 0.92);
+  border: 1px solid #323542;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #d1d5db;
+}
+
+.tbx-hover-tag.available {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.tbx-hover-tag.selected {
+  color: #2dc274;
+  font-weight: 700;
+}
+
+.tbx-hover-tag.unavailable {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+/* =========================================================
+   CHẾ ĐỘ 2: VÉ ĐỨNG (GA) - SƠ ĐỒ KHU VỰC + BẢNG CHỌN SỐ LƯỢNG (IMAGES 4 & 5)
+   ========================================================= */
+.tbx-standing-workspace {
+  max-width: 920px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.tbx-standing-map-card {
+  background-color: #16171d;
+  border: 1px solid #2b2d38;
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.tbx-standing-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #d1d5db;
+}
+
+.tbx-zoom-img-btn {
+  background: #272934;
+  border: 1px solid #3b3e4d;
+  color: #e5e7eb;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tbx-standing-img-box {
+  text-align: center;
+}
+
+.tbx-standing-img-box img {
+  max-width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: zoom-in;
+}
+
+.tbx-concert-standing-map {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px;
+  background: radial-gradient(circle at top, #1f1b2e 0%, #0d0e14 85%);
+  border-radius: 10px;
+  border: 1px solid #282b38;
+}
+
+.tbx-concert-stage-top {
+  width: 280px;
+  max-width: 80%;
+  padding: 12px 18px;
+  background: #4b5563;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  text-align: center;
+  border-radius: 6px;
+}
+
+.tbx-concert-stage-thrust {
+  width: 34px;
+  height: 32px;
+  background: #4b5563;
+  margin-bottom: 16px;
+  border-radius: 0 0 6px 6px;
+}
+
+.tbx-concert-standing-zones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 680px;
+  margin-bottom: 16px;
+}
+
+.tbx-standing-zone-tile {
+  background-color: var(--tile-bg, #ec4899);
+  color: #ffffff;
+  padding: 16px 14px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.tbx-standing-zone-tile:hover:not(.sold-out) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.tbx-standing-zone-tile.selected {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 3px #2dc274;
+}
+
+.tbx-standing-zone-tile.sold-out {
+  opacity: 0.45;
+  filter: grayscale(0.5);
+  cursor: not-allowed;
+}
+
+.tbx-tile-name {
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.tbx-tile-price {
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.tbx-tile-soldout {
+  margin-top: 2px;
+  background: #ffd6dc;
+  color: #d92648;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tbx-tile-selected-badge {
+  margin-top: 2px;
+  background: #2dc274;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.tbx-concert-foh-bottom {
+  width: 180px;
+  padding: 7px 12px;
+  background: #374151;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-align: center;
+  border-radius: 4px;
+}
+
+/* Ticketbox Standing Tier Table ("Loại vé" | "Số lượng") */
+.tbx-standing-ticket-table {
+  background-color: #16171d;
+  border: 1px solid #2b2d38;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tbx-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  border-bottom: 1px solid #2b2d38;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tbx-ticket-row {
+  padding: 18px 22px;
+  border-bottom: 1px dashed #2e313d;
+}
+
+.tbx-ticket-row:last-child {
+  border-bottom: none;
+}
+
+.tbx-ticket-row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tbx-ticket-row-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tbx-ticket-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tbx-tier-color-square {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tbx-ticket-tier-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #2dc274;
+  text-transform: uppercase;
+}
+
+.tbx-ticket-tier-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f9fafb;
+  padding-left: 24px;
+}
+
+.tbx-pink-soldout-badge {
+  display: inline-block;
+  background-color: #ffd6dc;
+  color: #d92648;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+}
+
+.tbx-pink-soldout-badge.small {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.tbx-qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tbx-step-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid #3f4252;
+  background-color: #252730;
+  color: #ffffff;
   font-size: 18px;
-  border-radius: 8px; /* Rounded corners */
+  font-weight: 700;
   cursor: pointer;
-  transition:
-    background-color 0.3s ease,
-    transform 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.back-to-event-detail-btn:hover {
-  background-color: #45a049; /* Darker green on hover */
-  transform: scale(1.1); /* Slight zoom effect */
+.tbx-step-btn.plus:hover:not(:disabled) {
+  background-color: #2dc274;
+  border-color: #2dc274;
 }
 
-.back-to-event-detail-btn:active {
-  background-color: #3e8e41; /* Even darker when clicked */
-  transform: scale(0.95); /* Pressed effect */
+.tbx-step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
-.notification-banner {
-  background-color: #d40303;
-  color: white;
-  padding: 10px;
+
+.tbx-step-val {
+  min-width: 38px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #111827;
+  font-weight: 700;
+  font-size: 15px;
+  border-radius: 6px;
+}
+
+.tbx-ticket-desc-box {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background-color: #23252f;
+  border-radius: 8px;
+  color: #d1d5db;
+  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.45;
+}
+
+.tbx-info-icon {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* =========================================================
+   RIGHT SIDEBAR (IMAGE 6)
+   ========================================================= */
+.tbx-sidebar-scroll {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tbx-sidebar-event-block {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #32343f;
+  margin-bottom: 18px;
+}
+
+.tbx-sidebar-event-title {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #ffffff;
+}
+
+.tbx-sidebar-meta-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  color: #d1d5db;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.tbx-meta-icon {
+  color: #2dc274;
+  flex-shrink: 0;
+}
+
+.tbx-session-switcher {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #343744;
+}
+
+.tbx-session-switcher-label {
+  display: block;
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+.tbx-session-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tbx-session-pill {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #3b3e4c;
+  background: #282a34;
+  color: #d1d5db;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tbx-session-pill.active {
+  border-color: #2dc274;
+  background: rgba(45, 194, 116, 0.18);
+  color: #2dc274;
+  font-weight: 700;
+}
+
+/* Bảng Giá vé kèm ô màu vuông (Image 6) */
+.tbx-sidebar-pricing-block {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #32343f;
+  margin-bottom: 18px;
+}
+
+.tbx-sidebar-section-heading {
+  margin: 0 0 12px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tbx-pricing-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tbx-pricing-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.tbx-pricing-legend-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tbx-color-swatch {
+  width: 18px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.tbx-legend-tier-name {
+  color: #e5e7eb;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tbx-pricing-legend-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tbx-legend-tier-price {
+  color: #2dc274;
+  font-weight: 700;
+}
+
+/* Danh sách vé đang chọn */
+.tbx-sidebar-cart-block {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #32343f;
+  margin-bottom: 18px;
+}
+
+.tbx-cart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tbx-cart-head .tbx-sidebar-section-heading {
+  margin: 0;
+}
+
+.tbx-clear-btn {
+  background: transparent;
+  border: none;
+  color: #f87171;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tbx-selected-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tbx-selected-item {
+  background: #282a33;
+  border: 1px solid #383b47;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.tbx-selected-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.tbx-selected-name {
+  flex: 1;
+  color: #ffffff;
+}
+
+.tbx-selected-qty {
+  color: #2dc274;
+  font-weight: 700;
+}
+
+.tbx-remove-item-btn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.tbx-remove-item-btn:hover {
+  color: #ef4444;
+}
+
+.tbx-selected-seat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tbx-seat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(45, 194, 116, 0.18);
+  border: 1px solid rgba(45, 194, 116, 0.45);
+  color: #86efac;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.tbx-seat-chip button {
+  background: transparent;
+  border: none;
+  color: #bbf7d0;
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+}
+
+.tbx-selected-subtotal {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2dc274;
+}
+
+/* Voucher Input */
+.tbx-sidebar-voucher-block {
+  margin-bottom: 10px;
+}
+
+.tbx-voucher-label {
+  display: block;
+  font-size: 12.5px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.tbx-voucher-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 7px;
+  border: 1px solid #383b47;
+  background: #16171d;
+  color: #ffffff;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.tbx-voucher-input:focus {
+  outline: none;
+  border-color: #2dc274;
+}
+
+/* Sticky Bottom Footer (Image 6) */
+.tbx-sidebar-footer {
+  padding: 16px 20px;
+  background-color: #272830;
+  border-top: 1px solid #363844;
+}
+
+.tbx-footer-note {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  background: #1b1c22;
+  color: #d1d5db;
+}
+
+.tbx-footer-note.error {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.tbx-footer-success {
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: #2dc274;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
   text-align: center;
-  border-radius: 5px;
-  margin: 30px;
-  font-weight: bold;
-  animation: fadeInOut 3s ease forwards;
+  margin-bottom: 10px;
 }
 
-@keyframes fadeInOut {
-  0% {
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+.tbx-footer-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+  color: #d1d5db;
+}
+
+.tbx-footer-ticket-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tbx-footer-total-price {
+  font-size: 17px;
+  color: #2dc274;
+}
+
+.tbx-cta-submit-btn {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 8px;
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.tbx-cta-submit-btn.empty {
+  background-color: #e5e7eb;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.tbx-cta-submit-btn.active {
+  background-color: #2dc274;
+  color: #ffffff;
+}
+
+.tbx-cta-submit-btn.active:hover:not(:disabled) {
+  background-color: #23a45f;
+}
+
+/* Modal phóng to sơ đồ */
+.tbx-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.tbx-modal-body {
+  position: relative;
+  max-width: 92vw;
+  max-height: 90vh;
+}
+
+.tbx-modal-body img {
+  max-width: 100%;
+  max-height: 86vh;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.tbx-modal-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: #ef4444;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
 }

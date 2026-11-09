@@ -1,7 +1,7 @@
 const router = require("express").Router();
 const ctrl = require("../controllers/eventController");
-const upload = require("../utils/upload");
 const { requireAuth } = require("../middleware/auth");
+const seatMap = require("../controllers/seatMapController");
 
 // LƯU Ý: Các route cố định phải đặt TRƯỚC route động "/:id"
 router.get("/in-banner", ctrl.inBanner);
@@ -12,13 +12,21 @@ router.get("/latest/week", ctrl.latest);
 router.get("/latest/month", ctrl.latest);
 router.get("/search", ctrl.search);
 router.get("/my-event", requireAuth, ctrl.myEvents);
+router.get("/sessions/:sessionId/seats", ctrl.getSessionSeats);
+router.get("/sessions/:sessionId/seat-map", seatMap.publicMap);
 
-// Tạo sự kiện mới (Bất kỳ user nào đăng nhập đều có quyền tạo sự kiện)
-router.post("/", requireAuth, upload.any(), ctrl.create);
+// Tạo / sửa / huỷ sự kiện của Nhà tổ chức nằm ở /v1/organizer/events (POST /v1/events vẫn dùng được, gọi cùng một xử lý)
+const { requireVerifiedOrganizer } = require("../middleware/auth");
+const upload = require("../utils/upload");
+router.post("/", requireVerifiedOrganizer, upload.any(), require("../controllers/organizerEventController").create);
 
-// Admin duyệt/từ chối sự kiện
-router.put("/:id/approve", requireAuth, ctrl.approve);
-router.put("/:id/reject", requireAuth, ctrl.reject);
+// Phòng chờ ảo (UC09)
+router.post("/:id/waiting-room/join", ctrl.joinWaitingRoom);
+router.get("/:id/waiting-room/status", ctrl.waitingRoomStatus);
+
+// Đánh giá sự kiện (UC20)
+router.get("/:id/reviews", ctrl.listReviews);
+router.post("/:id/reviews", requireAuth, ctrl.createReview);
 
 // Chi tiết sự kiện theo ID
 router.get("/:id", ctrl.getById);

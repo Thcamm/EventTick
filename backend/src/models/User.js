@@ -1,75 +1,38 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { options } = require("./_helpers");
 
 const userSchema = new Schema(
   {
-    fullName: {
-      type: String,
-      trim: true,
-      default: function () {
-        if (this.firstName || this.lastName) {
-          return `${this.lastName || ""} ${this.firstName || ""}`.trim();
-        }
-        return this.username || "";
-      },
-    },
-    firstName: { type: String, trim: true },
-    lastName: { type: String, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true, maxlength: 255 },
+    password_hash: { type: String, required: true },
+    full_name: { type: String, required: true, trim: true, maxlength: 150 },
+    phone: { type: String, trim: true, maxlength: 20 },
+    avatar_url: { type: String },
+    role: { type: String, enum: ["CUSTOMER", "ORGANIZER", "STAFF", "ADMIN"], default: "CUSTOMER", required: true },
+    // PENDING = chưa xác thực email
+    status: { type: String, enum: ["ACTIVE", "BLOCKED", "PENDING"], default: "PENDING", required: true },
+    google_id: { type: String, maxlength: 100 },
+    default_vat_info: { type: Schema.Types.Mixed },
+    created_at: { type: Date, default: Date.now, required: true },
+
+    // --- Trường mở rộng (ngoài đặc tả, phục vụ luồng auth hiện có) ---
     username: { type: String, trim: true },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    passwordHash: { type: String, required: true },
-    phone: { type: String, trim: true },
-    avatarUrl: { type: String },
+    first_name: { type: String, trim: true },
+    last_name: { type: String, trim: true },
     gender: { type: String },
     dob: { type: Date },
-
-    // Role: CUSTOMER (all users can book and create events), STAFF (scan QR tickets), ADMIN (approve events, vouchers)
-    // Backward compat: "user" -> "CUSTOMER", "admin" -> "ADMIN"
-    role: {
-      type: String,
-      enum: ["CUSTOMER", "STAFF", "ADMIN", "user", "admin", "both"],
-      default: "CUSTOMER",
-    },
-
-    // UC 1.2: Email verification
-    isEmailVerified: { type: Boolean, default: false },
-    emailVerificationToken: { type: String },
-    emailVerificationExpires: { type: Date },
-
-    // UC 1.4 & 1.5: Forgot & reset password
-    passwordResetToken: { type: String },
-    passwordResetExpires: { type: Date },
-
-    // Account active flag
-    isActive: { type: Boolean, default: true },
+    email_verification_token: { type: String },
+    email_verification_expires: { type: Date },
+    password_reset_token: { type: String },
+    password_reset_expires: { type: Date },
   },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
-  },
+  options,
 );
 
-// Virtual alias 'name' -> fullName for backward compatibility
+// Alias tương thích front-end cũ
 userSchema.virtual("name").get(function () {
-  return this.fullName || `${this.lastName || ""} ${this.firstName || ""}`.trim();
+  return this.full_name;
 });
 
-// Auto-fill fullName if name or firstName/lastName are provided
-userSchema.pre("save", function (next) {
-  if (!this.fullName && (this.firstName || this.lastName)) {
-    this.fullName = `${this.lastName || ""} ${this.firstName || ""}`.trim();
-  }
-  // Normalize roles
-  if (this.role === "user") this.role = "CUSTOMER";
-  if (this.role === "admin") this.role = "ADMIN";
-  next();
-});
-
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("User", userSchema, "users");

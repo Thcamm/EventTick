@@ -97,6 +97,9 @@ const Header = () => {
               <div className="dropdown">
                 <Link to={PATHS.USER_TICKETS}>🎟 Vé của tôi</Link>
                 <Link to={PATHS.ADMIN_MY_EVENTS}>📅 Sự kiện của tôi</Link>
+                {user.role === "ADMIN" && (
+                  <Link to={PATHS.ADMIN_SEATMAP}>🗺 Dựng sơ đồ chỗ ngồi</Link>
+                )}
                 <Link to={PATHS.USER_ACCOUNT}>⚙️ Tài khoản của tôi</Link>
                 <p style={{ margin: 0 }}>
                   <a href="#logout" onClick={handleLogout}>

@@ -1,267 +1,509 @@
+.ed-page-wrapper {
+  padding: 24px 16px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+.ed-loading {
+  color: #e5e7eb;
+  text-align: center;
+  padding: 48px 16px;
+  font-size: 16px;
+}
+
+/* HERO TICKET CARD */
 .ticket {
   display: flex;
-  width: 1200px;
-  margin: auto;
-  background: #fff;
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  background: #27272a;
   border-radius: 20px;
   overflow: hidden;
   position: relative;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
 .ticket-left {
   flex: 1;
-  padding: 30px;
+  padding: 32px;
   position: relative;
-}
-
-.ticket-left {
   background-color: #38383d;
   color: #fff;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-
-  border-right: 6px dashed #27272a;
+  border-right: 4px dashed #1f2026;
 }
 
 .ticket-left h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #00ff99;
+  margin: 0 0 16px;
+  font-size: 22px;
+  line-height: 1.35;
+  color: #ffffff;
 }
 
-.ticket-left p {
+.ticket-meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   margin: 10px 0;
+  font-size: 15px;
+  color: #2dc274;
+  font-weight: 600;
+}
+
+.ticket-meta-icon {
+  flex-shrink: 0;
+}
+
+.ticket-left-bottom {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ticket-price-from-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   font-size: 16px;
+  color: #d1d5db;
 }
 
-.ticket-left button {
-  background-color: #00ff99;
-  color: #000;
-  border: none;
-  padding: 10px 20px;
-  font-weight: bold;
-  border-radius: 5px;
-  cursor: pointer;
-  align-self: flex-start;
+.ticket-price-from-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: #2dc274;
+}
+
+.ticket-hero-buy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #2dc274;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background-color 0.2s ease;
+  width: fit-content;
+}
+
+.ticket-hero-buy-btn:hover {
+  background-color: #23a45f;
 }
 
 .ticket-right {
-  background-image: url("your-image.jpg");
-  /* Replace with actual image path */
-  background-size: cover;
-  background-position: center;
-}
-
-.ticket-right {
-  width: 800px;
-  height: 400px;
+  width: 64%;
+  max-width: 740px;
+  min-height: 360px;
   overflow: hidden;
-  /* hides the extra parts */
+  background: #18181b;
 }
 
 .ticket-right img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* crops the image nicely */
+  display: block;
 }
 
-/* Stitch in the middle */
-.ticket::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 2px;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    #ccc,
-    #ccc 5px,
-    transparent 5px,
-    transparent 10px
-  );
-  transform: translateX(-50%);
-  z-index: 2;
+@media (max-width: 900px) {
+  .ticket {
+    flex-direction: column-reverse;
+  }
+  .ticket-right {
+    width: 100%;
+    max-width: none;
+    height: 240px;
+    min-height: 240px;
+  }
+  .ticket-left {
+    border-right: none;
+    border-top: 3px dashed #1f2026;
+  }
 }
 
-.ticket::after,
-.ticket::before {
-  content: "";
-  position: absolute;
-  left: 33.2%;
-  transform: translateX(-50%);
-  width: 80px;
-  /* wider tear */
-  height: 80px;
-  /* taller tear, adjust as needed */
-  background: radial-gradient(
-    circle at center,
-    #27272a 50%,
-    transparent 51%
-  );
-  background-size: 80px 80px;
-  background-repeat: no-repeat;
-  z-index: 3;
-}
-
-.ticket::before {
-  top: -40px;
-  /* half of height to center the tear */
-}
-
-.ticket::after {
-  bottom: -40px;
-}
-
+/* SECTION CARDS (GIỚI THIỆU & BAN TỔ CHỨC - IMAGE 4) */
 .event-details-intro-container {
-  max-width: 1100px;
-  margin: auto;
-  margin-top: 40px;
-
-  margin-left: 180px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-  border-radius: 15px;
-  /* round corners */
+  max-width: 1160px;
+  margin: 28px auto 0;
+  border-radius: 14px;
   overflow: hidden;
-  /* ensures header also follows the rounded corners */
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
 }
 
-.event-intro-header {
-  background-color: #050505;
-  color: #2dc274;
-  padding: 20px;
-  text-align: center;
+.ed-light-card {
+  background-color: #ffffff;
+  color: #1f2937;
+  padding: 24px 28px 16px;
 }
 
-.event-intro-header h3 {
+.ed-section-title-row {
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ed-section-title-row h3 {
   margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.ed-intro-collapsible {
+  position: relative;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.ed-intro-collapsible.collapsed {
+  max-height: 520px;
+}
+
+.ed-intro-collapsible.expanded {
+  max-height: none;
+}
+
+.ed-intro-fade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 90px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.96) 80%,
+    #ffffff 100%
+  );
+  pointer-events: none;
+}
+
+/* STAGE / ZONE MAP PREVIEW INSIDE GIỚI THIỆU (IMAGE 4) */
+.ed-stage-map-preview {
+  background: radial-gradient(circle at top, #1f1b2e 0%, #0d0e14 85%);
+  border-radius: 12px;
+  padding: 22px 20px;
+  margin-bottom: 22px;
+  color: #ffffff;
+  text-align: center;
+  border: 1px solid #2e3244;
+}
+
+.ed-stage-map-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #f3f4f6;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+}
+
+.ed-custom-seatmap-img {
+  max-width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.ed-concert-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.ed-concert-stage {
+  width: 62%;
+  max-width: 340px;
+  padding: 12px 20px;
+  background: #4b5563;
+  color: #ffffff;
+  font-weight: 900;
   font-size: 20px;
-  font-weight: bold;
+  letter-spacing: 4px;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
-.event-intro-body {
-  padding: 30px;
-  color: white;
-  background-color: #31353e;
+.ed-concert-runway {
+  width: 38px;
+  height: 36px;
+  background: #4b5563;
+  margin-bottom: 14px;
+  border-radius: 0 0 6px 6px;
 }
 
-.ticket-full-details {
-  padding: 30px;
-  color: white;
-  background-color: #31353e;
+.ed-concert-zones-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 16px;
 }
 
-.event-intro-body h2 {
-  margin-bottom: 20px;
+.ed-concert-zone-block {
+  background: var(--zone-bg, #3b82f6);
+  color: #ffffff;
+  padding: 14px 12px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.28);
 }
 
-.event-intro-body p {
-  font-size: 16px;
+.ed-concert-zone-block.sold-out {
+  opacity: 0.5;
+  filter: grayscale(0.4);
+}
+
+.ed-zone-block-name {
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.ed-zone-block-price {
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.ed-zone-block-type {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.ed-concert-foh {
+  width: 45%;
+  max-width: 220px;
+  padding: 8px 14px;
+  background: #374151;
+  color: #e5e7eb;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 3px;
+  border-radius: 4px;
+}
+
+.ed-intro-html {
+  font-size: 15px;
+  line-height: 1.65;
+  color: #374151;
 }
 
 .event-intro-expand-btn {
-  margin-top: 20px;
-  background-color: #31353e;
-  /* white background */
-  color: white;
-  /* red text */
+  margin: 8px auto 0;
+  background: transparent;
+  color: #4b5563;
   border: none;
-  /* no border */
-  outline: none;
-  /* no outline */
-  padding: 10px 18px;
-  font-size: 15px;
-  border-radius: 8px;
+  padding: 6px 20px;
+  font-size: 20px;
   cursor: pointer;
   display: block;
-  /* Makes the button a block-level element */
-  margin: 0 auto;
-  /* Sets vertical margin to 0 and horizontal margins to auto */
-  width: fit-content;
 }
+
+.event-intro-expand-btn:hover {
+  color: #111827;
+}
+
+/* THÔNG TIN VÉ - DARK ACCORDION (MẪU IMAGE 5) */
+.ed-ticket-section {
+  background: transparent;
+  box-shadow: none;
+}
+
+.ed-ticket-box {
+  background-color: #212227;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #32343d;
+}
+
+.ed-ticket-box-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #32343d;
+}
+
+.ed-ticket-box-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.ed-sessions-accordion {
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-session-group {
+  border-bottom: 1px solid #32343d;
+}
+
+.ed-session-group:last-child {
+  border-bottom: none;
+}
+
+.ed-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background-color: #27282e;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ed-session-bar:hover {
+  background-color: #2c2e35;
+}
+
+.ed-session-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.ed-chevron {
+  display: inline-block;
+  font-size: 18px;
+  line-height: 1;
+  color: #d1d5db;
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+
+.ed-chevron.open {
+  transform: rotate(0deg);
+}
+
+.ed-session-datetime {
+  color: #f9fafb;
+}
+
 .session-ended-tag {
   display: inline-block;
-  margin-left: 10px;
-  padding: 4px 8px;
-  background-color: #e74c3c;
-  color: white;
+  margin-left: 8px;
+  padding: 3px 8px;
+  background-color: #ef4444;
+  color: #ffffff;
   font-size: 12px;
-  font-weight: bold;
-  border-radius: 5px;
-}
-
-.ticket-details-buy-button.disabled {
-  background-color: #999;
-  cursor: not-allowed;
-  pointer-events: none; /* ensures Link or button cannot be clicked */
-}
-
-.ticket-details-container {
-  margin-top: 30px;
-  background-color: rgb(0, 0, 0);
-  padding: 10px;
-  border-radius: 10px;
-  box-shadow: 0 4px 4px rgba(65, 63, 63, 0.7);
-  text-align: center;
-}
-
-.ticket-info {
-  margin-top: 20px;
-  text-align: left;
-}
-
-.ticket-option {
-  display: flex;
-  justify-content: space-between;
-  margin: 10px 0;
-}
-
-.tk-framed {
-  border-radius: 8px;
-  padding: 10px;
-  background-color: #e9eff4;
-}
-
-.ticket-type {
-  font-weight: bold;
-  color: black;
-}
-
-.ticket-price,
-.ticket-slot {
-  color: #333;
+  font-weight: 600;
+  border-radius: 4px;
 }
 
 .ticket-details-buy-button {
-  background-color: #03d48a;
-  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #2dc274;
+  color: #ffffff;
   border: none;
-  padding: 12px 20px;
-  font-size: 16px;
-  border-radius: 5px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 6px;
   cursor: pointer;
-  text-decoration: none; /* remove underline */
+  text-decoration: none;
+  transition: background-color 0.2s ease;
 }
 
-/* Hover effect */
 .ticket-details-buy-button:hover {
-  background-color: #026d48; /* slightly darker green */
-  transform: scale(1.05); /* optional: subtle zoom */
-  transition: all 0.2s ease; /* smooth transition */
+  background-color: #23a45f;
 }
 
-.event-time {
-  text-align: left;
-  margin-bottom: 15px;
+.ticket-details-buy-button.disabled {
+  background-color: #52525b;
+  color: #a1a1aa;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
-.event-time h2 {
-  margin: 0;
+.ed-tier-list {
+  display: flex;
+  flex-direction: column;
 }
 
-.event-time p {
-  margin: 5px 0 0;
-  color: #55d466;
+.ed-tier-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px 16px 42px;
+  background-color: #2d2f36;
+  border-top: 1px dashed #3e4049;
+}
+
+.ed-tier-row.alt {
+  background-color: #27282e;
+}
+
+.ed-tier-row-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ed-tier-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.ed-tier-desc {
+  font-size: 12.5px;
+  color: #9ca3af;
+}
+
+.ed-tier-row-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.ed-tier-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: #2dc274;
+}
+
+.ed-soldout-pill {
+  display: inline-block;
+  background-color: #ffd6dc;
+  color: #d92648;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 4px;
+  line-height: 1.2;
+}
+
+.ed-organizer-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #374151;
 }

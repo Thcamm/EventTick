@@ -20,6 +20,7 @@ export const PATHS = {
   ADMIN_CREATE_EVENT: "/admin/events",
   ADMIN_CREATE_EVENT_TEST: "/admin/events/test",
   ADMIN_MY_EVENTS: "/admin/my-event",
+  ADMIN_SEATMAP: "/admin/seatmap",
 
   // Payment
   PAYMENT: "/payment/:orderId",

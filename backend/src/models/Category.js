@@ -1,25 +1,14 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { options } = require("./_helpers");
 
-const categorySchema = new Schema(
+const schema = new Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
-    slug: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    description: { type: String, trim: true },
-    iconUrl: { type: String },
+    name: { type: String, required: true, trim: true, maxlength: 100 },
+    slug: { type: String, required: true, lowercase: true, trim: true, maxlength: 100 },
+    is_active: { type: Boolean, default: true, required: true },
   },
-  { timestamps: true },
+  options,
 );
 
-module.exports = mongoose.model("Category", categorySchema);
+module.exports = mongoose.model("Category", schema, "categories");

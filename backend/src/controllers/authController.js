@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const User = require("../models/User");
 const { signToken } = require("../utils/jwt");
+const { userToClient } = require("../utils/serializers");
 const mailService = require("../utils/mailService");
 
 const COOKIE_OPTS = {
@@ -30,7 +31,7 @@ exports.register = async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const fullName = name || [lastName, firstName].filter(Boolean).join(" ");
+    const fullName = name || [lastName, firstName].filter(Boolean).join(" ") || trimmedUsername;
 
     // Sinh token kích hoạt email ngẫu nhiên (hạn 24h)
     const verificationToken = crypto.randomBytes(32).toString("hex");
@@ -39,21 +40,21 @@ exports.register = async (req, res) => {
     const user = await User.create({
       username: trimmedUsername,
       email: trimmedEmail,
-      passwordHash,
-      role: role === "admin" ? "admin" : "user",
-      name: fullName,
-      firstName,
-      lastName,
-      isEmailVerified: false,
-      emailVerificationToken: verificationToken,
-      emailVerificationExpires: verificationExpires,
+      password_hash: passwordHash,
+      role: role === "ORGANIZER" ? "ORGANIZER" : "CUSTOMER", // ADMIN/STAFF chỉ do Admin cấp
+      full_name: fullName,
+      first_name: firstName,
+      last_name: lastName,
+      status: "PENDING",
+      email_verification_token: verificationToken,
+      email_verification_expires: verificationExpires,
     });
 
     // Gửi email xác thực
     await mailService.sendVerificationEmail(
       user.email,
       verificationToken,
-      user.firstName || user.name || user.username,
+      user.first_name || user.full_name || user.username,
     );
 
     res.json({
@@ -77,8 +78,8 @@ exports.verifyEmail = async (req, res) => {
     }
 
     const user = await User.findOne({
-      emailVerificationToken: token,
-      emailVerificationExpires: { $gt: new Date() },
+      email_verification_token: token,
+      email_verification_expires: { $gt: new Date() },
     });
 
     if (!user) {
@@ -88,9 +89,9 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
+    if (user.status === "PENDING") user.status = "ACTIVE";
+    user.email_verification_token = undefined;
+    user.email_verification_expires = undefined;
     await user.save();
 
     res.json({
@@ -116,19 +117,19 @@ exports.resendVerification = async (req, res) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy tài khoản với email này" });
     }
 
-    if (user.isEmailVerified) {
+    if (user.status !== "PENDING") {
       return res.json({ success: true, message: "Tài khoản này đã được kích hoạt trước đó." });
     }
 
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    user.emailVerificationToken = verificationToken;
-    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    user.email_verification_token = verificationToken;
+    user.email_verification_expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await user.save();
 
     await mailService.sendVerificationEmail(
       user.email,
       verificationToken,
-      user.firstName || user.name || user.username,
+      user.first_name || user.full_name || user.username,
     );
 
     res.json({
@@ -157,13 +158,16 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Sai tài khoản hoặc mật khẩu" });
     }
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
+    const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) {
       return res.status(401).json({ success: false, message: "Sai tài khoản hoặc mật khẩu" });
     }
 
     // Kiểm tra kích hoạt email (nếu chưa kích hoạt -> cảnh báo kèm cờ unverified để front-end hiển thị nút resend)
-    if (!user.isEmailVerified) {
+    if (user.status === "BLOCKED") {
+      return res.status(403).json({ success: false, message: "Tài khoản đã bị khóa" });
+    }
+    if (user.status === "PENDING") {
       return res.status(403).json({
         success: false,
         unverified: true,
@@ -177,12 +181,7 @@ exports.login = async (req, res) => {
     res.json({
       success: true,
       message: "Đăng nhập thành công",
-      user: {
-        id: user._id,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-      },
+      user: userToClient(user),
     });
   } catch (err) {
     console.error("Login error:", err);
@@ -199,10 +198,8 @@ exports.logout = (req, res) => {
 // GET /auth  -> Header.jsx gọi cái này để biết đã đăng nhập chưa
 exports.me = async (req, res) => {
   if (!req.user) return res.json({ user: null });
-  const user = await User.findById(req.user.id).select("username name role");
-  res.json({
-    user: user ? { id: user._id, username: user.username, name: user.name, role: user.role } : null,
-  });
+  const user = await User.findById(req.user.id).select("username full_name role status");
+  res.json({ user: user && user.status !== "BLOCKED" ? userToClient(user) : null });
 };
 
 // GET /auth/user  -> AccountPage.jsx dùng để lấy thông tin chi tiết (yêu cầu đăng nhập)
@@ -213,15 +210,16 @@ exports.getProfile = async (req, res) => {
     success: true,
     user: {
       userName: user.username,
-      name: user.name || [user.lastName, user.firstName].filter(Boolean).join(" "),
-      firstName: user.firstName,
-      lastName: user.lastName,
+      name: user.full_name,
+      firstName: user.first_name,
+      lastName: user.last_name,
       email: user.email,
       phone: user.phone,
       dob: user.dob,
       gender: user.gender,
       role: user.role,
-      isEmailVerified: user.isEmailVerified,
+      isEmailVerified: user.status === "ACTIVE",
+      avatarUrl: user.avatar_url,
     },
   });
 };
@@ -230,15 +228,19 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const { name, firstName, lastName, phone, dob, gender } = req.body;
-    const updateData = { phone, dob, gender };
-    if (firstName !== undefined) updateData.firstName = firstName;
-    if (lastName !== undefined) updateData.lastName = lastName;
-    if (name !== undefined) {
-      updateData.fullName = name;
+    const updateData = {};
+    if (phone !== undefined) updateData.phone = phone;
+    if (dob) updateData.dob = dob;
+    if (gender !== undefined) updateData.gender = gender;
+    if (firstName !== undefined) updateData.first_name = firstName;
+    if (lastName !== undefined) updateData.last_name = lastName;
+    if (name) {
+      updateData.full_name = name;
     } else if (firstName !== undefined || lastName !== undefined) {
-      updateData.fullName = [lastName, firstName].filter(Boolean).join(" ");
+      const full = [lastName, firstName].filter(Boolean).join(" ");
+      if (full) updateData.full_name = full;
     }
-    await User.findByIdAndUpdate(req.user.id, updateData);
+    await User.findByIdAndUpdate(req.user.id, updateData, { runValidators: true });
     res.json({ success: true, message: "Cập nhật hồ sơ thành công" });
   } catch (err) {
     console.error("Update profile error:", err);
@@ -265,15 +267,15 @@ exports.forgotPassword = async (req, res) => {
 
     // Sinh token reset ngẫu nhiên (hạn 15 phút)
     const resetToken = crypto.randomBytes(32).toString("hex");
-    user.passwordResetToken = resetToken;
-    user.passwordResetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
+    user.password_reset_token = resetToken;
+    user.password_reset_expires = new Date(Date.now() + 15 * 60 * 1000); // 15 phút
     await user.save();
 
     // Gửi email đặt lại mật khẩu
     await mailService.sendPasswordResetEmail(
       user.email,
       resetToken,
-      user.firstName || user.name || user.username,
+      user.first_name || user.full_name || user.username,
     );
 
     res.json({
@@ -299,8 +301,8 @@ exports.resetPassword = async (req, res) => {
     }
 
     const user = await User.findOne({
-      passwordResetToken: token,
-      passwordResetExpires: { $gt: new Date() },
+      password_reset_token: token,
+      password_reset_expires: { $gt: new Date() },
     });
 
     if (!user) {
@@ -310,9 +312,9 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    user.passwordHash = await bcrypt.hash(newPassword, 10);
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
+    user.password_hash = await bcrypt.hash(newPassword, 10);
+    user.password_reset_token = undefined;
+    user.password_reset_expires = undefined;
     await user.save();
 
     res.json({
@@ -342,12 +344,12 @@ exports.changePassword = async (req, res) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy người dùng" });
     }
 
-    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    const ok = await bcrypt.compare(currentPassword, user.password_hash);
     if (!ok) {
       return res.status(400).json({ success: false, message: "Mật khẩu hiện tại không chính xác" });
     }
 
-    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.password_hash = await bcrypt.hash(newPassword, 10);
     await user.save();
 
     res.json({

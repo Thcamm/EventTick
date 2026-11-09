@@ -1,9 +1,20 @@
 [
   {
+    "username": "demo_admin",
+    "email": "admin@demo.com",
+    "password": "123456",
+    "role": "ADMIN",
+    "name": "Phạm Quản Trị",
+    "firstName": "Quản Trị",
+    "lastName": "Phạm",
+    "phone": "0900000001",
+    "gender": "Nam"
+  },
+  {
     "username": "demo_organizer",
     "email": "organizer@demo.com",
     "password": "123456",
-    "role": "ADMIN",
+    "role": "ORGANIZER",
     "name": "Nguyễn Văn Tổ Chức",
     "firstName": "Tổ Chức",
     "lastName": "Nguyễn Văn",

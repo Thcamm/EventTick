@@ -21,3 +21,6 @@ uploads/
 Thumbs.db
 .vscode/
 .idea/
+
+backend/private-uploads/
+backend/scripts

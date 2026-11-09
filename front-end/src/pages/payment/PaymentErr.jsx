@@ -1,5 +1,5 @@
 // import "./Try.css";
-import React, { useState } from "react";
+import React from "react";
 
 const PaymentErr = () => {
   return <div> Lỗi hệ thống trong thanh toán!</div>;

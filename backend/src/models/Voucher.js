@@ -1,72 +1,23 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { ref, options } = require("./_helpers");
 
-const voucherSchema = new Schema(
+const schema = new Schema(
   {
-    code: {
-      type: String,
-      required: true,
-      unique: true,
-      uppercase: true,
-      trim: true,
-      index: true,
-    },
-    eventId: {
-      type: Schema.Types.ObjectId,
-      ref: "Event",
-      default: null,
-      index: true,
-    },
-    discountType: {
-      type: String,
-      enum: ["PERCENT", "FIXED"],
-      required: true,
-    },
-    discountValue: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    maxDiscountAmount: {
-      type: Number,
-      min: 0,
-    },
-    minOrderValue: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    maxUsage: {
-      type: Number,
-      default: 100,
-      min: 1,
-    },
-    usedCount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    maxUsagePerUser: {
-      type: Number,
-      default: 1,
-      min: 1,
-    },
-    usedUsers: [
-      {
-        userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-        usedAt: { type: Date, default: Date.now },
-      },
-    ],
-    expiresAt: {
-      type: Date,
-      required: true,
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
+    event_id: ref("Event", { required: true }),
+    code: { type: String, required: true, uppercase: true, trim: true, maxlength: 50 },
+    discount_type: { type: String, enum: ["PERCENT", "FIXED"], required: true },
+    discount_value: { type: Number, required: true, min: 0 },
+    max_discount_amount: { type: Number },
+    min_order_amount: { type: Number, default: 0, min: 0 },
+    usage_limit: { type: Number, required: true, min: 0 },
+    used_count: { type: Number, default: 0, min: 0 },
+    max_per_user: { type: Number, default: 1, min: 1 },
+    valid_from: { type: Date, required: true },
+    valid_until: { type: Date, required: true },
+    is_active: { type: Boolean, default: true, required: true },
   },
-  { timestamps: true },
+  options,
 );
 
-module.exports = mongoose.model("Voucher", voucherSchema);
+module.exports = mongoose.model("Voucher", schema, "vouchers");

@@ -20,7 +20,7 @@ const PaymentResult = () => {
   useEffect(() => {
     // 'PENDING','CONFIRMED','FAILED','CANCELLED'
     if (status === "CONFIRMED") {
-      navigate(`/payment-done`);
+      navigate(`/payment-done?order=${orderId}`);
     } else if (status === "FAILED") {
       navigate(`/payment-fail`);
     }

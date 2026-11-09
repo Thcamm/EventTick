@@ -208,6 +208,14 @@ mock.onGet(/\/seats\/[^/?]+$/).reply((config) => {
   return [200, { success: true, event: findEvent(id) }];
 });
 
+mock.onGet(/\/events\/sessions\/[^/?]+\/seats$/).reply(() => {
+  return [200, { success: true, seats: [], tiers: [] }];
+});
+
+mock.onGet(/\/events\/sessions\/[^/?]+\/seat-map$/).reply(() => {
+  return [200, { success: true, hasMap: false, zones: [], decorations: [] }];
+});
+
 mock.onPost(/\/booking\/create-payment-intent/).reply(200, {
   success: true,
   clientSecret: "mock_client_secret_test",

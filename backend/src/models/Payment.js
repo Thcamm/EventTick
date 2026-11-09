@@ -1,38 +1,18 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { ref, options } = require("./_helpers");
 
-const paymentSchema = new Schema(
+const schema = new Schema(
   {
-    bookingId: {
-      type: Schema.Types.ObjectId,
-      ref: "Booking",
-      required: true,
-      index: true,
-    },
-    amount: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    provider: {
-      type: String,
-      enum: ["VNPAY", "MOMO", "ZALOPAY", "STRIPE", "DEMO"],
-      required: true,
-    },
-    transactionId: {
-      type: String,
-      index: true,
-    },
-    status: {
-      type: String,
-      enum: ["PENDING", "SUCCESS", "FAILED"],
-      default: "PENDING",
-    },
-    rawResponse: {
-      type: Schema.Types.Mixed,
-    },
+    order_id: ref("Order", { required: true }), // 1-1 với orders
+    gateway: { type: String, enum: ["VNPAY", "VIETQR", "MOMO", "STRIPE"], required: true },
+    transaction_ref: { type: String, required: true, maxlength: 100 },
+    amount: { type: Number, required: true, min: 0 },
+    status: { type: String, enum: ["INITIATED", "SUCCESS", "FAILED", "REFUNDED"], default: "INITIATED", required: true },
+    webhook_payload: { type: Schema.Types.Mixed },
+    paid_at: { type: Date },
   },
-  { timestamps: true },
+  options,
 );
 
-module.exports = mongoose.model("Payment", paymentSchema);
+module.exports = mongoose.model("Payment", schema, "payments");

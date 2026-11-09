@@ -16,6 +16,7 @@ import EventDetailPage from "@/pages/events/EventDetailPage";
 import RealtimeEventDetailsPage from "@/pages/events/RealtimeEventDetailsPage";
 import CreateEventPage from "@/pages/admin/CreateEventPage";
 import MyEventPage from "@/pages/admin/MyEventPage";
+import AdminSeatmapPage from "@/pages/admin/AdminSeatmapPage";
 import MyTicketPage from "@/pages/user/MyTicketPage";
 import AccountPage from "@/pages/user/AccountPage";
 import PaymentPage from "@/pages/payment/PaymentPage";
@@ -51,6 +52,7 @@ const AppRoutes = () => {
       {/* Admin event creation protected route */}
       <Route element={<ProtectedRoute />}>
         <Route path={PATHS.ADMIN_CREATE_EVENT} element={<CreateEventPage />} />
+        <Route path={PATHS.ADMIN_SEATMAP} element={<AdminSeatmapPage />} />
       </Route>
 
       {/* Legacy /test route aliases redirecting seamlessly to protected routes */}

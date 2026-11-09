@@ -1,8 +1,8 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const path = require("path");
 
 const connectDB = require("./config/db");
 const { attachUser } = require("./middleware/auth");
@@ -41,10 +41,24 @@ app.use(attachUser);
 // (baseURL: http://localhost:3000/v1) — không cần sửa gì bên front-end.
 const eventCtrl = require("./controllers/eventController");
 const userRoutes = require("./routes/userRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const resaleRoutes = require("./routes/resaleRoutes");
+const categoryRoutes = require("./routes/categoryRoutes");
 
 app.use("/v1/auth", authRoutes);
 app.use("/v1/events", eventRoutes);
+app.use("/v1/categories", categoryRoutes);
 app.use("/v1/booking", bookingRoutes);
+app.use("/v1/payment", require("./routes/paymentRoutes"));
+app.use("/v1/resale", resaleRoutes);
+const kycRoutes = require("./routes/kycRoutes");
+app.use("/v1/organizer/kyc", kycRoutes.organizer);
+app.use("/v1/admin/kyc", kycRoutes.admin);
+const contractRoutes = require("./routes/contractRoutes");
+app.use("/v1/organizer/contracts", contractRoutes.organizer);
+app.use("/v1/admin", adminRoutes);
+app.use("/v1/organizer", require("./routes/organizerRoutes"));
+app.use("/v1/user", userRoutes);
 app.get("/v1/seats/:id", eventCtrl.getById);
 
 // Thêm API mới theo yêu cầu
@@ -56,9 +70,16 @@ app.use((req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  if (err && err.name === "MulterError") {
+    const msg = err.code === "LIMIT_FILE_SIZE" ? "Tệp quá lớn (tối đa 10MB)" : "Tệp tải lên không hợp lệ";
+    return res.status(400).json({ success: false, message: msg });
+  }
   console.error(err);
   res.status(500).json({ success: false, message: "Lỗi server nội bộ" });
 });
+
+require("./config/redis");
+require("./services/bookingService").startExpirationJob();
 
 app.listen(PORT, () => {
   console.log(`✅ Backend đang chạy tại http://localhost:${PORT}`);

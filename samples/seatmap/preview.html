@@ -1,0 +1,271 @@
+<!doctype html><meta charset="utf-8"><title>Xem trước sơ đồ chỗ ngồi mẫu</title>
+<style>
+body{margin:0;background:#000;color:#e5e7eb;font:14px/1.5 sans-serif}
+h2{text-align:center;margin:16px 0 4px}p.hint{text-align:center;color:#9ca3af;margin:0 0 8px}
+.wrap{position:relative;max-width:1000px;margin:0 auto}
+.wrap>svg{width:100%;height:auto;display:block}
+#layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#layer circle{pointer-events:auto;stroke:rgba(15,23,42,.45);stroke-width:.6}
+.available{fill:#fff;cursor:pointer}.available:hover{stroke:#2dc274;stroke-width:1.6}
+.selected{fill:#2dc274;stroke:#fff;stroke-width:1.2;cursor:pointer}.unavailable{fill:#ef4444;cursor:not-allowed}
+[id^="SEC_"]{stroke:#fff;stroke-width:1.5}
+.bar{position:sticky;bottom:0;background:#1f2026;border-top:1px solid #2e303a;padding:12px 24px;display:flex;gap:24px;align-items:center;justify-content:center}
+.legend span{margin-right:16px}.legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-2px}
+#tip{position:fixed;display:none;background:#111218;border:1px solid #3a3d4a;border-radius:8px;padding:8px 12px;pointer-events:none;font-size:13px}
+</style>
+<h2>Sơ đồ mẫu — bấm ghế trắng để chọn</h2>
+<p class="hint">Ghế do thuật toán đặt vào đúng hình khu (hàng cong quanh sân khấu). Ghế đỏ = đã bán / không chọn được.</p>
+<div class="wrap" id="wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700">
+  <path id="STAGE_MAIN" data-center="500,40" d="M350,40 L650,40 A150,150 0 0 1 350,40 Z" fill="#9ca3af"/>
+  <text x="500" y="118" text-anchor="middle" fill="#fff" font-size="40" font-family="sans-serif">STAGE</text>
+
+  <path id="SEC_VIP_L" d="M320.0,254.5 A280 280 0 0 0 485.3,319.6 L490.6,219.8 A180 180 0 0 1 384.3,177.9 Z"/>
+  <path id="SEC_VIP_R" d="M514.7,319.6 A280 280 0 0 0 680.0,254.5 L615.7,177.9 A180 180 0 0 1 509.4,219.8 Z"/>
+  <path id="SEC_CAT1_L" d="M201.2,290.7 A390 390 0 0 0 479.6,429.5 L484.8,329.6 A290 290 0 0 1 277.8,226.4 Z"/>
+  <path id="SEC_CAT1_R" d="M520.4,429.5 A390 390 0 0 0 798.8,290.7 L722.2,226.4 A290 290 0 0 1 515.2,329.6 Z"/>
+  <rect id="SEC_GA" x="300" y="490" width="400" height="150" rx="14"/>
+  <text x="500" y="575" text-anchor="middle" fill="#fff" font-size="22" font-family="sans-serif">KHU ĐỨNG (GA)</text>
+  <rect id="FOH" x="440" y="655" width="120" height="30" fill="#555"/>
+</svg>
+<svg id="layer"></svg></div>
+<div class="bar"><div class="legend"><span><i style="background:#fff"></i>Trống</span><span><i style="background:#2dc274"></i>Đang chọn</span><span><i style="background:#ef4444"></i>Không chọn được</span></div><div id="sum">Chưa chọn ghế</div></div>
+<div id="tip"></div>
+<script>
+/**
+ * Đặt ghế vào đúng hình của khu trên mặt bằng SVG.
+ *
+ * Backend chỉ gửi lưới tương đối (row, number, x, y: các hàng thẳng cột, đã có khoảng trống lối đi).
+ * Ở đây ta "đổ" lưới đó vào hình khu:
+ *   STRAIGHT: kéo lưới cho vừa khung chữ nhật của khu, thu nhỏ dần cho tới khi mọi ghế nằm trong hình khu.
+ *   ARC:      mỗi hàng là một cung tròn quanh sân khấu (hàng đầu sát sân khấu), ghế trải đều theo góc mà khu chiếm
+ *             ở bán kính đó -> hàng ghế cong theo khán đài như sơ đồ concert.
+ *
+ * placeSection là hàm thuần (không đụng DOM) để kiểm thử được; shapeTools là lớp mỏng nối với DOM SVG.
+ */
+const SHAPES = "path, polygon, rect, circle, ellipse, polyline";
+const SAMPLE_N = 70;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const wrap = (a) => {
+  let x = a;
+  while (x > Math.PI) x -= 2 * Math.PI;
+  while (x <= -Math.PI) x += 2 * Math.PI;
+  return x;
+};
+const minPositiveGap = (sortedValues) => {
+  let g = Infinity;
+  for (let i = 1; i < sortedValues.length; i++) {
+    const d = sortedValues[i] - sortedValues[i - 1];
+    if (d > 1e-9 && d < g) g = d;
+  }
+  return g;
+};
+
+function groupRows(seats) {
+  const ys = [...new Set(seats.map((s) => s.y))].sort((a, b) => a - b);
+  const rows = ys.map(() => []);
+  seats.forEach((s) => rows[ys.indexOf(s.y)].push(s));
+  rows.forEach((r) => r.sort((a, b) => a.x - b.x));
+  return { rows, ys };
+}
+
+function samplePoints(bbox, inside) {
+  const pts = [];
+  for (let i = 0; i < SAMPLE_N; i++) {
+    for (let j = 0; j < SAMPLE_N; j++) {
+      const x = bbox.x + ((i + 0.5) / SAMPLE_N) * bbox.w;
+      const y = bbox.y + ((j + 0.5) / SAMPLE_N) * bbox.h;
+      if (inside(x, y)) pts.push({ x, y });
+    }
+  }
+  return pts;
+}
+
+function placeStraight({ seats, bbox, inside, center }) {
+  const xs = seats.map((s) => s.x), ys = seats.map((s) => s.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const W = maxX - minX, H = maxY - minY;
+  const put = (f) => {
+    const fw = bbox.w * f, fh = bbox.h * f;
+    return seats.map((s) => ({
+      id: String(s._id),
+      x: center.x - fw / 2 + (W > 0 ? ((s.x - minX) / W) * fw : fw / 2),
+      y: center.y - fh / 2 + (H > 0 ? ((s.y - minY) / H) * fh : fh / 2),
+    }));
+  };
+  let f = 1, placed = put(f);
+  while (f > 0.3 && !placed.every((p) => inside(p.x, p.y))) {
+    f = +(f - 0.05).toFixed(2);
+    placed = put(f);
+  }
+  const { rows, ys: rowYs } = groupRows(seats);
+  const colGap = Math.min(...rows.map((r) => minPositiveGap(r.map((s) => s.x))));
+  const rowGap = minPositiveGap(rowYs);
+  const spX = W > 0 && Number.isFinite(colGap) ? (colGap / W) * bbox.w * f : Infinity;
+  const spY = H > 0 && Number.isFinite(rowGap) ? (rowGap / H) * bbox.h * f : Infinity;
+  const sp = Math.min(spX, spY);
+  return { placed, radius: clamp(0.38 * (Number.isFinite(sp) ? sp : 10), 1.5, 16) };
+}
+
+function placeArc({ seats, pts, center, stage }) {
+  const { rows } = groupRows(seats);
+  const R = rows.length;
+  const base = Math.atan2(center.x - stage.x, center.y - stage.y); // hướng từ sân khấu tới khu
+  const polar = pts.map((p) => ({ r: Math.hypot(p.x - stage.x, p.y - stage.y), a: wrap(Math.atan2(p.x - stage.x, p.y - stage.y) - base) }));
+  const rmin = Math.min(...polar.map((p) => p.r)), rmax = Math.max(...polar.map((p) => p.r));
+  const rowGap = (rmax - rmin) / R;
+  const gA = { min: Math.min(...polar.map((p) => p.a)), max: Math.max(...polar.map((p) => p.a)) };
+
+  const placed = [];
+  let minSp = rowGap;
+  rows.forEach((row, i) => {
+    const ri = rmin + (i + 0.5) * rowGap;
+    const near = polar.filter((p) => Math.abs(p.r - ri) <= rowGap / 2);
+    let a0 = near.length ? Math.min(...near.map((p) => p.a)) : gA.min;
+    let a1 = near.length ? Math.max(...near.map((p) => p.a)) : gA.max;
+    const pad = (rowGap * 0.5) / ri; // chừa nửa ghế ở hai đầu hàng
+    if (a1 - a0 > 2 * pad) { a0 += pad; a1 -= pad; } else { a0 = a1 = (a0 + a1) / 2; }
+    const x0 = row[0].x, w = row[row.length - 1].x - x0;
+    const ts = row.map((s) => (w > 0 ? (s.x - x0) / w : 0.5));
+    const g = minPositiveGap(ts);
+    if (Number.isFinite(g)) minSp = Math.min(minSp, ri * (a1 - a0) * g);
+    row.forEach((s, k) => {
+      const ang = base + a0 + ts[k] * (a1 - a0);
+      placed.push({ id: String(s._id), x: stage.x + ri * Math.sin(ang), y: stage.y + ri * Math.cos(ang), ri, ang });
+    });
+  });
+  return { placed, radius: clamp(0.38 * minSp, 1.5, 16), rowGap };
+}
+
+/**
+ * seats: [{ _id, row, number, x, y }] của một khu.  layout: "STRAIGHT" | "ARC".
+ * bbox: {x, y, w, h} của khu (tọa độ SVG).  inside(x, y): điểm có nằm trong hình khu không.
+ * stage: {x, y} tâm cung (chỉ cần cho ARC).  Trả về { positions: Map(id -> {x, y}), radius }.
+ */
+function placeSection({ seats, layout, bbox, inside, stage }) {
+  if (!seats.length) return { positions: new Map(), radius: 4 };
+  const pts = samplePoints(bbox, inside);
+  const center = pts.length
+    ? { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length }
+    : { x: bbox.x + bbox.w / 2, y: bbox.y + bbox.h / 2 };
+
+  let out;
+  if (layout === "ARC" && pts.length > 10 && stage) {
+    out = placeArc({ seats, pts, center, stage });
+    // ghế rơi ra ngoài hình khu (hình méo): dịch dọc bán kính vào lại trong khu
+    const step = (out.rowGap || 4) / 4;
+    out.placed.forEach((p) => {
+      if (inside(p.x, p.y)) return;
+      for (let d = 1; d <= 8; d++) {
+        for (const sgn of [1, -1]) {
+          const r2 = p.ri + sgn * d * step;
+          const x = stage.x + r2 * Math.sin(p.ang), y = stage.y + r2 * Math.cos(p.ang);
+          if (inside(x, y)) { p.x = x; p.y = y; return; }
+        }
+      }
+    });
+  } else {
+    out = placeStraight({ seats, bbox, inside, center });
+  }
+  return { positions: new Map(out.placed.map((p) => [p.id, { x: p.x, y: p.y }])), radius: out.radius };
+}
+
+// ---------------------------------------------------------------- DOM SVG
+
+/** Hình học của một phần tử SVG (khu / sân khấu) trong hệ tọa độ của thẻ <svg> gốc. */
+function shapeTools(root, el) {
+  const rootCtm = root.getScreenCTM?.();
+  if (!rootCtm) return null;
+  const rootInv = rootCtm.inverse();
+  const nodes = el.matches?.(SHAPES) ? [el] : [...el.querySelectorAll(SHAPES)];
+  const items = nodes
+    .map((n) => {
+      const ctm = n.getScreenCTM?.();
+      if (!ctm) return null;
+      const m = rootInv.multiply(ctm);
+      return { n, m, inv: m.inverse() };
+    })
+    .filter(Boolean);
+  if (!items.length) return null;
+
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  items.forEach(({ n, m }) => {
+    const b = n.getBBox();
+    [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].forEach(([x, y]) => {
+      const p = new DOMPoint(x, y).matrixTransform(m);
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    });
+  });
+  const bbox = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  const inside = (x, y) =>
+    items.some(({ n, inv }) => {
+      const p = new DOMPoint(x, y).matrixTransform(inv);
+      return typeof n.isPointInFill === "function" ? n.isPointInFill(p) : true;
+    });
+  return { bbox, inside };
+}
+
+/** Tâm cung của sân khấu: thuộc tính data-center="x,y" nếu có, không thì tâm khung chữ nhật của sân khấu. */
+function stageCenter(root) {
+  const el = root.querySelector('[id^="STAGE_"]');
+  if (!el) return null;
+  const dc = (el.getAttribute("data-center") || "").split(",").map(Number);
+  if (dc.length === 2 && dc.every(Number.isFinite)) return { x: dc[0], y: dc[1] };
+  const t = shapeTools(root, el);
+  return t ? { x: t.bbox.x + t.bbox.w / 2, y: t.bbox.y + t.bbox.h / 2 } : null;
+}
+
+/** Tính vị trí mọi ghế trên mặt bằng. sections: [{ sectionId, layout }]; seats có thuộc tính `section`. */
+function layoutAllSeats(root, sections, seats) {
+  const svg = root.querySelector("svg");
+  if (!svg) return { vb: null, bySection: {} };
+  const stage = stageCenter(svg);
+  const grouped = new Map();
+  seats.forEach((s) => {
+    if (!grouped.has(s.section)) grouped.set(s.section, []);
+    grouped.get(s.section).push(s);
+  });
+  const bySection = {};
+  sections.forEach((sec) => {
+    const list = grouped.get(sec.sectionId);
+    if (!list?.length) return;
+    const el = [...svg.querySelectorAll('[id^="SEC_"]')].find((n) => n.id === sec.sectionId);
+    const tools = el && shapeTools(svg, el);
+    if (!tools) return;
+    bySection[sec.sectionId] = placeSection({ seats: list, layout: sec.layout, bbox: tools.bbox, inside: tools.inside, stage });
+  });
+  return { vb: svg.getAttribute("viewBox"), bySection };
+}
+
+const DATA = {"sections":[{"sectionId":"SEC_VIP_L","name":"VIP Trái","type":"SEATED","tier":"VIP","layout":"ARC","capacity":38,"color":"#e8222d","price":2000000},{"sectionId":"SEC_VIP_R","name":"VIP Phải","type":"SEATED","tier":"VIP","layout":"ARC","capacity":38,"color":"#e8222d","price":2000000},{"sectionId":"SEC_CAT1_L","name":"CAT 1 Trái","type":"SEATED","tier":"CAT 1","layout":"ARC","capacity":70,"color":"#7b3f98","price":1000000},{"sectionId":"SEC_CAT1_R","name":"CAT 1 Phải","type":"SEATED","tier":"CAT 1","layout":"ARC","capacity":70,"color":"#7b3f98","price":1000000},{"sectionId":"SEC_GA","name":"Khu đứng GA","type":"GA","tier":"GA","layout":"STRAIGHT","capacity":500,"color":"#06b6d4","price":500000}],"seats":[{"_id":"SEC_VIP_L|A|2","section":"SEC_VIP_L","row":"A","number":"2","x":30,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|A|3","section":"SEC_VIP_L","row":"A","number":"3","x":60,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|A|4","section":"SEC_VIP_L","row":"A","number":"4","x":90,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|A|5","section":"SEC_VIP_L","row":"A","number":"5","x":120,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|A|6","section":"SEC_VIP_L","row":"A","number":"6","x":150,"y":0,"status":"SOLD"},{"_id":"SEC_VIP_L|A|7","section":"SEC_VIP_L","row":"A","number":"7","x":180,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|A|8","section":"SEC_VIP_L","row":"A","number":"8","x":210,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|A|9","section":"SEC_VIP_L","row":"A","number":"9","x":240,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|1","section":"SEC_VIP_L","row":"B","number":"1","x":0,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|2","section":"SEC_VIP_L","row":"B","number":"2","x":30,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|3","section":"SEC_VIP_L","row":"B","number":"3","x":60,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|4","section":"SEC_VIP_L","row":"B","number":"4","x":90,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|5","section":"SEC_VIP_L","row":"B","number":"5","x":120,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|6","section":"SEC_VIP_L","row":"B","number":"6","x":150,"y":34,"status":"SOLD"},{"_id":"SEC_VIP_L|B|7","section":"SEC_VIP_L","row":"B","number":"7","x":180,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|8","section":"SEC_VIP_L","row":"B","number":"8","x":210,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|9","section":"SEC_VIP_L","row":"B","number":"9","x":240,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|B|10","section":"SEC_VIP_L","row":"B","number":"10","x":270,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|1","section":"SEC_VIP_L","row":"C","number":"1","x":0,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|2","section":"SEC_VIP_L","row":"C","number":"2","x":30,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|3","section":"SEC_VIP_L","row":"C","number":"3","x":60,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|4","section":"SEC_VIP_L","row":"C","number":"4","x":90,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|5","section":"SEC_VIP_L","row":"C","number":"5","x":120,"y":68,"status":"SOLD"},{"_id":"SEC_VIP_L|C|6","section":"SEC_VIP_L","row":"C","number":"6","x":150,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|7","section":"SEC_VIP_L","row":"C","number":"7","x":180,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|8","section":"SEC_VIP_L","row":"C","number":"8","x":210,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|9","section":"SEC_VIP_L","row":"C","number":"9","x":240,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|C|10","section":"SEC_VIP_L","row":"C","number":"10","x":270,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|1","section":"SEC_VIP_L","row":"D","number":"1","x":0,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|2","section":"SEC_VIP_L","row":"D","number":"2","x":30,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|3","section":"SEC_VIP_L","row":"D","number":"3","x":60,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|4","section":"SEC_VIP_L","row":"D","number":"4","x":90,"y":102,"status":"SOLD"},{"_id":"SEC_VIP_L|D|5","section":"SEC_VIP_L","row":"D","number":"5","x":120,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|6","section":"SEC_VIP_L","row":"D","number":"6","x":150,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|7","section":"SEC_VIP_L","row":"D","number":"7","x":180,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|8","section":"SEC_VIP_L","row":"D","number":"8","x":210,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|9","section":"SEC_VIP_L","row":"D","number":"9","x":240,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_L|D|10","section":"SEC_VIP_L","row":"D","number":"10","x":270,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|2","section":"SEC_VIP_R","row":"A","number":"2","x":30,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|3","section":"SEC_VIP_R","row":"A","number":"3","x":60,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|4","section":"SEC_VIP_R","row":"A","number":"4","x":90,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|5","section":"SEC_VIP_R","row":"A","number":"5","x":120,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|6","section":"SEC_VIP_R","row":"A","number":"6","x":150,"y":0,"status":"SOLD"},{"_id":"SEC_VIP_R|A|7","section":"SEC_VIP_R","row":"A","number":"7","x":180,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|8","section":"SEC_VIP_R","row":"A","number":"8","x":210,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|A|9","section":"SEC_VIP_R","row":"A","number":"9","x":240,"y":0,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|1","section":"SEC_VIP_R","row":"B","number":"1","x":0,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|2","section":"SEC_VIP_R","row":"B","number":"2","x":30,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|3","section":"SEC_VIP_R","row":"B","number":"3","x":60,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|4","section":"SEC_VIP_R","row":"B","number":"4","x":90,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|5","section":"SEC_VIP_R","row":"B","number":"5","x":120,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|6","section":"SEC_VIP_R","row":"B","number":"6","x":150,"y":34,"status":"SOLD"},{"_id":"SEC_VIP_R|B|7","section":"SEC_VIP_R","row":"B","number":"7","x":180,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|8","section":"SEC_VIP_R","row":"B","number":"8","x":210,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|9","section":"SEC_VIP_R","row":"B","number":"9","x":240,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|B|10","section":"SEC_VIP_R","row":"B","number":"10","x":270,"y":34,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|1","section":"SEC_VIP_R","row":"C","number":"1","x":0,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|2","section":"SEC_VIP_R","row":"C","number":"2","x":30,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|3","section":"SEC_VIP_R","row":"C","number":"3","x":60,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|4","section":"SEC_VIP_R","row":"C","number":"4","x":90,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|5","section":"SEC_VIP_R","row":"C","number":"5","x":120,"y":68,"status":"SOLD"},{"_id":"SEC_VIP_R|C|6","section":"SEC_VIP_R","row":"C","number":"6","x":150,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|7","section":"SEC_VIP_R","row":"C","number":"7","x":180,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|8","section":"SEC_VIP_R","row":"C","number":"8","x":210,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|9","section":"SEC_VIP_R","row":"C","number":"9","x":240,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|C|10","section":"SEC_VIP_R","row":"C","number":"10","x":270,"y":68,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|1","section":"SEC_VIP_R","row":"D","number":"1","x":0,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|2","section":"SEC_VIP_R","row":"D","number":"2","x":30,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|3","section":"SEC_VIP_R","row":"D","number":"3","x":60,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|4","section":"SEC_VIP_R","row":"D","number":"4","x":90,"y":102,"status":"SOLD"},{"_id":"SEC_VIP_R|D|5","section":"SEC_VIP_R","row":"D","number":"5","x":120,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|6","section":"SEC_VIP_R","row":"D","number":"6","x":150,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|7","section":"SEC_VIP_R","row":"D","number":"7","x":180,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|8","section":"SEC_VIP_R","row":"D","number":"8","x":210,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|9","section":"SEC_VIP_R","row":"D","number":"9","x":240,"y":102,"status":"AVAILABLE"},{"_id":"SEC_VIP_R|D|10","section":"SEC_VIP_R","row":"D","number":"10","x":270,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|1","section":"SEC_CAT1_L","row":"A","number":"1","x":0,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|2","section":"SEC_CAT1_L","row":"A","number":"2","x":30,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|3","section":"SEC_CAT1_L","row":"A","number":"3","x":60,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|4","section":"SEC_CAT1_L","row":"A","number":"4","x":90,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|5","section":"SEC_CAT1_L","row":"A","number":"5","x":120,"y":0,"status":"SOLD"},{"_id":"SEC_CAT1_L|A|6","section":"SEC_CAT1_L","row":"A","number":"6","x":150,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|7","section":"SEC_CAT1_L","row":"A","number":"7","x":180,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|8","section":"SEC_CAT1_L","row":"A","number":"8","x":232,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|9","section":"SEC_CAT1_L","row":"A","number":"9","x":262,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|10","section":"SEC_CAT1_L","row":"A","number":"10","x":292,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|11","section":"SEC_CAT1_L","row":"A","number":"11","x":322,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|12","section":"SEC_CAT1_L","row":"A","number":"12","x":352,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|13","section":"SEC_CAT1_L","row":"A","number":"13","x":382,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|A|14","section":"SEC_CAT1_L","row":"A","number":"14","x":412,"y":0,"status":"SOLD"},{"_id":"SEC_CAT1_L|B|1","section":"SEC_CAT1_L","row":"B","number":"1","x":0,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|2","section":"SEC_CAT1_L","row":"B","number":"2","x":30,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|3","section":"SEC_CAT1_L","row":"B","number":"3","x":60,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|4","section":"SEC_CAT1_L","row":"B","number":"4","x":90,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|5","section":"SEC_CAT1_L","row":"B","number":"5","x":120,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|6","section":"SEC_CAT1_L","row":"B","number":"6","x":150,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|7","section":"SEC_CAT1_L","row":"B","number":"7","x":180,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|8","section":"SEC_CAT1_L","row":"B","number":"8","x":232,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|9","section":"SEC_CAT1_L","row":"B","number":"9","x":262,"y":34,"status":"SOLD"},{"_id":"SEC_CAT1_L|B|10","section":"SEC_CAT1_L","row":"B","number":"10","x":292,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|11","section":"SEC_CAT1_L","row":"B","number":"11","x":322,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|12","section":"SEC_CAT1_L","row":"B","number":"12","x":352,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|13","section":"SEC_CAT1_L","row":"B","number":"13","x":382,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|B|14","section":"SEC_CAT1_L","row":"B","number":"14","x":412,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|1","section":"SEC_CAT1_L","row":"C","number":"1","x":0,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|2","section":"SEC_CAT1_L","row":"C","number":"2","x":30,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|3","section":"SEC_CAT1_L","row":"C","number":"3","x":60,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|4","section":"SEC_CAT1_L","row":"C","number":"4","x":90,"y":68,"status":"SOLD"},{"_id":"SEC_CAT1_L|C|5","section":"SEC_CAT1_L","row":"C","number":"5","x":120,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|6","section":"SEC_CAT1_L","row":"C","number":"6","x":150,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|7","section":"SEC_CAT1_L","row":"C","number":"7","x":180,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|8","section":"SEC_CAT1_L","row":"C","number":"8","x":232,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|9","section":"SEC_CAT1_L","row":"C","number":"9","x":262,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|10","section":"SEC_CAT1_L","row":"C","number":"10","x":292,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|11","section":"SEC_CAT1_L","row":"C","number":"11","x":322,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|12","section":"SEC_CAT1_L","row":"C","number":"12","x":352,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|C|13","section":"SEC_CAT1_L","row":"C","number":"13","x":382,"y":68,"status":"SOLD"},{"_id":"SEC_CAT1_L|C|14","section":"SEC_CAT1_L","row":"C","number":"14","x":412,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|1","section":"SEC_CAT1_L","row":"D","number":"1","x":0,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|2","section":"SEC_CAT1_L","row":"D","number":"2","x":30,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|3","section":"SEC_CAT1_L","row":"D","number":"3","x":60,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|4","section":"SEC_CAT1_L","row":"D","number":"4","x":90,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|5","section":"SEC_CAT1_L","row":"D","number":"5","x":120,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|6","section":"SEC_CAT1_L","row":"D","number":"6","x":150,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|7","section":"SEC_CAT1_L","row":"D","number":"7","x":180,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|8","section":"SEC_CAT1_L","row":"D","number":"8","x":232,"y":102,"status":"SOLD"},{"_id":"SEC_CAT1_L|D|9","section":"SEC_CAT1_L","row":"D","number":"9","x":262,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|10","section":"SEC_CAT1_L","row":"D","number":"10","x":292,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|11","section":"SEC_CAT1_L","row":"D","number":"11","x":322,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|12","section":"SEC_CAT1_L","row":"D","number":"12","x":352,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|13","section":"SEC_CAT1_L","row":"D","number":"13","x":382,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|D|14","section":"SEC_CAT1_L","row":"D","number":"14","x":412,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|1","section":"SEC_CAT1_L","row":"E","number":"1","x":0,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|2","section":"SEC_CAT1_L","row":"E","number":"2","x":30,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|3","section":"SEC_CAT1_L","row":"E","number":"3","x":60,"y":136,"status":"SOLD"},{"_id":"SEC_CAT1_L|E|4","section":"SEC_CAT1_L","row":"E","number":"4","x":90,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|5","section":"SEC_CAT1_L","row":"E","number":"5","x":120,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|6","section":"SEC_CAT1_L","row":"E","number":"6","x":150,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|7","section":"SEC_CAT1_L","row":"E","number":"7","x":180,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|8","section":"SEC_CAT1_L","row":"E","number":"8","x":232,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|9","section":"SEC_CAT1_L","row":"E","number":"9","x":262,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|10","section":"SEC_CAT1_L","row":"E","number":"10","x":292,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|11","section":"SEC_CAT1_L","row":"E","number":"11","x":322,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|12","section":"SEC_CAT1_L","row":"E","number":"12","x":352,"y":136,"status":"SOLD"},{"_id":"SEC_CAT1_L|E|13","section":"SEC_CAT1_L","row":"E","number":"13","x":382,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_L|E|14","section":"SEC_CAT1_L","row":"E","number":"14","x":412,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|1","section":"SEC_CAT1_R","row":"A","number":"1","x":0,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|2","section":"SEC_CAT1_R","row":"A","number":"2","x":30,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|3","section":"SEC_CAT1_R","row":"A","number":"3","x":60,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|4","section":"SEC_CAT1_R","row":"A","number":"4","x":90,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|5","section":"SEC_CAT1_R","row":"A","number":"5","x":120,"y":0,"status":"SOLD"},{"_id":"SEC_CAT1_R|A|6","section":"SEC_CAT1_R","row":"A","number":"6","x":150,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|7","section":"SEC_CAT1_R","row":"A","number":"7","x":180,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|8","section":"SEC_CAT1_R","row":"A","number":"8","x":232,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|9","section":"SEC_CAT1_R","row":"A","number":"9","x":262,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|10","section":"SEC_CAT1_R","row":"A","number":"10","x":292,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|11","section":"SEC_CAT1_R","row":"A","number":"11","x":322,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|12","section":"SEC_CAT1_R","row":"A","number":"12","x":352,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|13","section":"SEC_CAT1_R","row":"A","number":"13","x":382,"y":0,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|A|14","section":"SEC_CAT1_R","row":"A","number":"14","x":412,"y":0,"status":"SOLD"},{"_id":"SEC_CAT1_R|B|1","section":"SEC_CAT1_R","row":"B","number":"1","x":0,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|2","section":"SEC_CAT1_R","row":"B","number":"2","x":30,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|3","section":"SEC_CAT1_R","row":"B","number":"3","x":60,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|4","section":"SEC_CAT1_R","row":"B","number":"4","x":90,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|5","section":"SEC_CAT1_R","row":"B","number":"5","x":120,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|6","section":"SEC_CAT1_R","row":"B","number":"6","x":150,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|7","section":"SEC_CAT1_R","row":"B","number":"7","x":180,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|8","section":"SEC_CAT1_R","row":"B","number":"8","x":232,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|9","section":"SEC_CAT1_R","row":"B","number":"9","x":262,"y":34,"status":"SOLD"},{"_id":"SEC_CAT1_R|B|10","section":"SEC_CAT1_R","row":"B","number":"10","x":292,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|11","section":"SEC_CAT1_R","row":"B","number":"11","x":322,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|12","section":"SEC_CAT1_R","row":"B","number":"12","x":352,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|13","section":"SEC_CAT1_R","row":"B","number":"13","x":382,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|B|14","section":"SEC_CAT1_R","row":"B","number":"14","x":412,"y":34,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|1","section":"SEC_CAT1_R","row":"C","number":"1","x":0,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|2","section":"SEC_CAT1_R","row":"C","number":"2","x":30,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|3","section":"SEC_CAT1_R","row":"C","number":"3","x":60,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|4","section":"SEC_CAT1_R","row":"C","number":"4","x":90,"y":68,"status":"SOLD"},{"_id":"SEC_CAT1_R|C|5","section":"SEC_CAT1_R","row":"C","number":"5","x":120,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|6","section":"SEC_CAT1_R","row":"C","number":"6","x":150,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|7","section":"SEC_CAT1_R","row":"C","number":"7","x":180,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|8","section":"SEC_CAT1_R","row":"C","number":"8","x":232,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|9","section":"SEC_CAT1_R","row":"C","number":"9","x":262,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|10","section":"SEC_CAT1_R","row":"C","number":"10","x":292,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|11","section":"SEC_CAT1_R","row":"C","number":"11","x":322,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|12","section":"SEC_CAT1_R","row":"C","number":"12","x":352,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|C|13","section":"SEC_CAT1_R","row":"C","number":"13","x":382,"y":68,"status":"SOLD"},{"_id":"SEC_CAT1_R|C|14","section":"SEC_CAT1_R","row":"C","number":"14","x":412,"y":68,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|1","section":"SEC_CAT1_R","row":"D","number":"1","x":0,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|2","section":"SEC_CAT1_R","row":"D","number":"2","x":30,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|3","section":"SEC_CAT1_R","row":"D","number":"3","x":60,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|4","section":"SEC_CAT1_R","row":"D","number":"4","x":90,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|5","section":"SEC_CAT1_R","row":"D","number":"5","x":120,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|6","section":"SEC_CAT1_R","row":"D","number":"6","x":150,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|7","section":"SEC_CAT1_R","row":"D","number":"7","x":180,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|8","section":"SEC_CAT1_R","row":"D","number":"8","x":232,"y":102,"status":"SOLD"},{"_id":"SEC_CAT1_R|D|9","section":"SEC_CAT1_R","row":"D","number":"9","x":262,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|10","section":"SEC_CAT1_R","row":"D","number":"10","x":292,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|11","section":"SEC_CAT1_R","row":"D","number":"11","x":322,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|12","section":"SEC_CAT1_R","row":"D","number":"12","x":352,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|13","section":"SEC_CAT1_R","row":"D","number":"13","x":382,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|D|14","section":"SEC_CAT1_R","row":"D","number":"14","x":412,"y":102,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|1","section":"SEC_CAT1_R","row":"E","number":"1","x":0,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|2","section":"SEC_CAT1_R","row":"E","number":"2","x":30,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|3","section":"SEC_CAT1_R","row":"E","number":"3","x":60,"y":136,"status":"SOLD"},{"_id":"SEC_CAT1_R|E|4","section":"SEC_CAT1_R","row":"E","number":"4","x":90,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|5","section":"SEC_CAT1_R","row":"E","number":"5","x":120,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|6","section":"SEC_CAT1_R","row":"E","number":"6","x":150,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|7","section":"SEC_CAT1_R","row":"E","number":"7","x":180,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|8","section":"SEC_CAT1_R","row":"E","number":"8","x":232,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|9","section":"SEC_CAT1_R","row":"E","number":"9","x":262,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|10","section":"SEC_CAT1_R","row":"E","number":"10","x":292,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|11","section":"SEC_CAT1_R","row":"E","number":"11","x":322,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|12","section":"SEC_CAT1_R","row":"E","number":"12","x":352,"y":136,"status":"SOLD"},{"_id":"SEC_CAT1_R|E|13","section":"SEC_CAT1_R","row":"E","number":"13","x":382,"y":136,"status":"AVAILABLE"},{"_id":"SEC_CAT1_R|E|14","section":"SEC_CAT1_R","row":"E","number":"14","x":412,"y":136,"status":"AVAILABLE"}]};
+const wrap = document.getElementById("wrap"), layer = document.getElementById("layer"), tip = document.getElementById("tip"), sum = document.getElementById("sum");
+const byId = Object.fromEntries(DATA.sections.map((s) => [s.sectionId, s]));
+const fmt = (v) => v.toLocaleString("vi-VN") + " đ";
+document.querySelectorAll('[id^="STAGE_"]').forEach((e) => e.style.fill = "#9ca3af");
+document.querySelectorAll('[id^="SEC_"]').forEach((e) => e.style.fill = byId[e.id].color);
+const out = layoutAllSeats(wrap, DATA.sections, DATA.seats);
+layer.setAttribute("viewBox", out.vb);
+const picked = new Set();
+function refresh() {
+  let total = 0;
+  picked.forEach((id) => { const s = DATA.seats.find((x) => x._id === id); total += byId[s.section].price; });
+  sum.textContent = picked.size ? picked.size + " ghế · " + fmt(total) : "Chưa chọn ghế";
+}
+DATA.seats.forEach((seat) => {
+  const pl = out.bySection[seat.section]; if (!pl) return;
+  const p = pl.positions.get(String(seat._id)); if (!p) return;
+  const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", pl.radius);
+  const free = seat.status === "AVAILABLE";
+  c.setAttribute("class", free ? "available" : "unavailable");
+  c.onclick = () => {
+    if (!free) return;
+    if (picked.has(seat._id)) { picked.delete(seat._id); c.setAttribute("class", "available"); }
+    else { picked.add(seat._id); c.setAttribute("class", "selected"); }
+    refresh();
+  };
+  c.onmousemove = (e) => { const s = byId[seat.section]; tip.style.display = "block"; tip.style.left = e.clientX + 14 + "px"; tip.style.top = e.clientY + 14 + "px";
+    tip.innerHTML = "<b>" + s.name + "</b> · Hàng " + seat.row + " · Ghế " + seat.number + "<br>" + s.tier + " · " + fmt(s.price) + "<br>" + (free ? "Còn trống" : "Không chọn được"); };
+  c.onmouseleave = () => tip.style.display = "none";
+  layer.appendChild(c);
+});
+</script>
