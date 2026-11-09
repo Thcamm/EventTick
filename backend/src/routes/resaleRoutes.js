@@ -3,6 +3,7 @@ const ctrl = require("../controllers/resaleController");
 const { requireAuth } = require("../middleware/auth");
 
 // Danh sách vé bán lại theo sự kiện (Công khai)
+router.get("/listings", ctrl.getAllActiveListings);
 router.get("/events/:eventId/listings", ctrl.getEventListings);
 
 // Quản lý vé bán lại của cá nhân & Mua vé bán lại

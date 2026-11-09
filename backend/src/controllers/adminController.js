@@ -4,14 +4,17 @@ const {
   Event,
   EventSession,
   TicketTier,
+  Seat,
   Ticket,
   Order,
   Payment,
   PayoutSettlement,
   RefundRequest,
+  ResaleListing,
   OrganizerProfile,
   EContract,
 } = require("../models");
+const bookingService = require("../services/bookingService");
 const { httpError, validId, ah, str } = require("../utils/http");
 const { audit } = require("../utils/audit");
 
@@ -128,8 +131,14 @@ exports.listCategories = ah(async (req, res) => {
 
 // POST /v1/admin/categories
 exports.createCategory = ah(async (req, res) => {
-  const { name, slug, iconUrl, isActive = true } = req.body;
+  const { name, slug, iconUrl, isActive = true, defaultCommissionPct, default_commission_pct } = req.body;
   if (!name) throw httpError("Tên danh mục không được để trống", 400);
+
+  const rawRate = defaultCommissionPct ?? default_commission_pct ?? 10;
+  const rate = Number(rawRate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 50) {
+    throw httpError("defaultCommissionPct phải từ 0 đến 50 (%)", 400);
+  }
 
   const cleanName = String(name).trim();
   const cleanSlug = String(slug || cleanName)
@@ -147,9 +156,10 @@ exports.createCategory = ah(async (req, res) => {
     slug: cleanSlug,
     icon_url: iconUrl,
     is_active: Boolean(isActive),
+    default_commission_pct: rate,
   });
 
-  await audit(req, "CATEGORY_CREATE", "categories", cat._id, { name: cat.name });
+  await audit(req, "CATEGORY_CREATE", "categories", cat._id, { name: cat.name, defaultCommissionPct: rate });
   res.status(201).json({ success: true, message: "Đã tạo danh mục thành công", category: cat });
 });
 
@@ -158,14 +168,21 @@ exports.updateCategory = ah(async (req, res) => {
   const cat = await Category.findById(validId(req.params.id, "ID danh mục"));
   if (!cat) throw httpError("Không tìm thấy danh mục", 404);
 
-  const { name, slug, iconUrl, isActive } = req.body;
+  const { name, slug, iconUrl, isActive, defaultCommissionPct, default_commission_pct } = req.body;
   if (name !== undefined) cat.name = String(name).trim();
   if (slug !== undefined) cat.slug = String(slug).trim().toLowerCase();
   if (iconUrl !== undefined) cat.icon_url = iconUrl;
   if (isActive !== undefined) cat.is_active = Boolean(isActive);
+  if (defaultCommissionPct !== undefined || default_commission_pct !== undefined) {
+    const rate = Number(defaultCommissionPct ?? default_commission_pct);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 50) {
+      throw httpError("defaultCommissionPct phải từ 0 đến 50 (%)", 400);
+    }
+    cat.default_commission_pct = rate;
+  }
 
   await cat.save();
-  await audit(req, "CATEGORY_UPDATE", "categories", cat._id, { name: cat.name });
+  await audit(req, "CATEGORY_UPDATE", "categories", cat._id, { name: cat.name, defaultCommissionPct: cat.default_commission_pct });
   res.json({ success: true, message: "Đã cập nhật danh mục", category: cat });
 });
 
@@ -375,12 +392,47 @@ exports.approveRefund = ah(async (req, res) => {
   refund.processed_at = new Date();
   await refund.save();
 
-  // Đổi trạng thái vé / đơn hàng
+  // Đổi trạng thái vé / đơn hàng + trả ghế / hoàn tồn kho + huỷ tin bán lại
   if (refund.ticket_id) {
-    await Ticket.updateOne({ _id: refund.ticket_id }, { status: "REFUNDED" });
+    const tk = await Ticket.findByIdAndUpdate(refund.ticket_id, { status: "REFUNDED" }, { new: true });
+    await ResaleListing.updateMany({ ticket_id: refund.ticket_id, status: "ACTIVE" }, { status: "CANCELLED" });
+    if (tk?.seat_id) {
+      await Seat.updateOne(
+        { _id: tk.seat_id },
+        { $set: { status: "AVAILABLE" }, $unset: { locked_by_user_id: 1, lock_expires_at: 1 } },
+      );
+    }
+    if (tk?.tier_id) {
+      await TicketTier.updateOne({ _id: tk.tier_id }, { $inc: { available_quantity: 1 } });
+    }
+    const remainingValid = await Ticket.countDocuments({
+      order_id: refund.order_id,
+      status: { $in: ["VALID", "LISTED_RESALE", "USED"] },
+    });
+    if (remainingValid === 0) {
+      await Order.updateOne({ _id: refund.order_id }, { status: "REFUNDED" });
+    }
   } else if (refund.order_id) {
+    const orderTickets = await Ticket.find({ order_id: refund.order_id }).select("_id").lean();
+    if (orderTickets.length) {
+      await ResaleListing.updateMany(
+        { ticket_id: { $in: orderTickets.map((t) => t._id) }, status: "ACTIVE" },
+        { status: "CANCELLED" },
+      );
+    }
     await Ticket.updateMany({ order_id: refund.order_id }, { status: "REFUNDED" });
-    await Order.updateOne({ _id: refund.order_id }, { status: "REFUNDED" });
+    const ord = await Order.findByIdAndUpdate(refund.order_id, { status: "REFUNDED" }, { new: true });
+    if (ord?.seat_ids?.length) {
+      await Seat.updateMany(
+        { _id: { $in: ord.seat_ids } },
+        { $set: { status: "AVAILABLE" }, $unset: { locked_by_user_id: 1, lock_expires_at: 1 } },
+      );
+    }
+    if (ord?.items?.length) {
+      for (const it of ord.items) {
+        await TicketTier.updateOne({ _id: it.tier_id }, { $inc: { available_quantity: it.quantity } });
+      }
+    }
   }
 
   await audit(req, "REFUND_APPROVE", "refund_requests", refund._id, { amount: refund.refund_amount });
@@ -407,55 +459,28 @@ exports.rejectRefund = ah(async (req, res) => {
 
 // POST /v1/admin/events/:id/bulk-refund (Hoàn tiền hàng loạt sự kiện bị huỷ)
 exports.bulkRefundEvent = ah(async (req, res) => {
-  const e = await Event.findById(validId(req.params.id, "ID sự kiện"));
-  if (!e) throw httpError("Không tìm thấy sự kiện", 404);
+  const eventId = validId(req.params.id, "ID sự kiện");
+  const { reason = "Sự kiện bị huỷ theo quyết định của ban tổ chức / quản trị" } = req.body || {};
 
-  const { reason = "Sự kiện bị huỷ theo quyết định của ban tổ chức / quản trị" } = req.body;
+  const result = await bookingService.bulkRefundAndCancelEvent(eventId, reason);
 
-  // 1. Chuyển trạng thái sự kiện sang CANCELLED
-  e.status = "CANCELLED";
-  await e.save();
-
-  // 2. Tìm mọi đơn PAID của sự kiện
-  const paidOrders = await Order.find({ event_id: e._id, status: "PAID" });
-
-  let refundedCount = 0;
-  let totalRefundAmount = 0;
-
-  for (const order of paidOrders) {
-    order.status = "REFUNDED";
-    await order.save();
-
-    await Ticket.updateMany(
-      { order_id: order._id, status: { $in: ["VALID", "LISTED_RESALE"] } },
-      { status: "REFUNDED" },
-    );
-
-    await RefundRequest.create({
-      order_id: order._id,
-      user_id: order.buyer_id,
-      refund_type: "EVENT_BULK_REFUND",
-      refund_amount: order.total_amount,
-      reason,
-      status: "COMPLETED",
-      processed_at: new Date(),
-    });
-
-    refundedCount++;
-    totalRefundAmount += order.total_amount;
-  }
-
-  await audit(req, "EVENT_BULK_REFUND", "events", e._id, {
-    refundedOrdersCount: refundedCount,
-    totalRefundAmount,
+  await audit(req, "EVENT_BULK_REFUND", "events", result.event._id, {
+    refundedOrdersCount: result.refundedOrdersCount,
+    totalRefundAmount: result.totalRefundAmount,
+    releasedPendingOrders: result.releasedPendingOrders,
+    cancelledResaleCount: result.cancelledResaleCount,
+    notifiedBuyersCount: result.notifiedBuyersCount,
     reason,
   });
 
   res.json({
     success: true,
-    message: `Đã hoàn tiền hàng loạt thành công cho ${refundedCount} đơn hàng`,
-    refundedCount,
-    totalRefundAmount,
+    message: `Đã hoàn tiền hàng loạt thành công cho ${result.refundedOrdersCount} đơn hàng`,
+    refundedCount: result.refundedOrdersCount,
+    totalRefundAmount: result.totalRefundAmount,
+    releasedPendingOrders: result.releasedPendingOrders,
+    cancelledResaleCount: result.cancelledResaleCount,
+    notifiedBuyersCount: result.notifiedBuyersCount,
   });
 });
 

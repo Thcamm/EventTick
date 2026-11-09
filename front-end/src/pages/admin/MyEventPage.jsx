@@ -24,17 +24,8 @@ const MyEventPage = () => {
           setEvents([]);
         }
       } catch (error) {
-        if (
-          error.response &&
-          error.response.status >= 400 &&
-          error.response.status < 500
-        ) {
-          console.log("Redirecting to home due to 4xx error");
-          window.location.href = "/";
-        } else {
-          console.error("Error fetching events:", error);
-          setEvents([]);
-        }
+        console.error("Error fetching events:", error);
+        setEvents([]);
       } finally {
         setLoading(false);
       }
@@ -67,10 +58,31 @@ const MyEventPage = () => {
           <li>
             <strong>Sự kiện của tôi</strong>
           </li>
+          <li>
+            <Link
+              to={PATHS.ORGANIZER_KYC}
+              style={{ textDecoration: "none", color: "#ffffff" }}
+            >
+              Hồ sơ xác minh KYC
+            </Link>
+          </li>
+          <li>
+            <Link
+              to={PATHS.ORGANIZER_CONTRACTS}
+              style={{ textDecoration: "none", color: "#ffffff" }}
+            >
+              Hợp đồng điện tử
+            </Link>
+          </li>
         </ul>
       </div>
       <div className="my-event-main">
-        <h1>Sự kiện của tôi</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <h1 style={{ margin: 0 }}>Sự kiện của tôi</h1>
+          <Link to={PATHS.ADMIN_CREATE_EVENT} className="my-event-btn" style={{ padding: "8px 16px", textDecoration: "none" }}>
+            ➕ Đăng ký sự kiện mới
+          </Link>
+        </div>
         {loading ? (
           <p>Đang tải sự kiện...</p>
         ) : events.length > 0 ? (
@@ -82,6 +94,7 @@ const MyEventPage = () => {
                   <th>Tên</th>
                   <th>Địa điểm</th>
                   <th>Trạng thái duyệt</th>
+                  <th>Công cụ vận hành</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,6 +143,38 @@ const MyEventPage = () => {
                             Lý do: {event.rejectionReason}
                           </div>
                         )}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <Link
+                            to={`/organizer/events/${event._id}/dashboard`}
+                            style={{
+                              padding: "4px 8px",
+                              backgroundColor: "#3b82f6",
+                              color: "#fff",
+                              borderRadius: "4px",
+                              fontSize: "12px",
+                              textDecoration: "none",
+                              fontWeight: 500,
+                            }}
+                          >
+                            📊 Dashboard
+                          </Link>
+                          <Link
+                            to={`/organizer/events/${event._id}/vouchers`}
+                            style={{
+                              padding: "4px 8px",
+                              backgroundColor: "#8b5cf6",
+                              color: "#fff",
+                              borderRadius: "4px",
+                              fontSize: "12px",
+                              textDecoration: "none",
+                              fontWeight: 500,
+                            }}
+                          >
+                            🎟 Vouchers
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );

@@ -4,6 +4,7 @@ const User = require("../models/User");
 const { signToken } = require("../utils/jwt");
 const { userToClient } = require("../utils/serializers");
 const mailService = require("../utils/mailService");
+const { saveUploadedFile } = require("../utils/upload");
 
 const COOKIE_OPTS = {
   httpOnly: true,
@@ -224,10 +225,10 @@ exports.getProfile = async (req, res) => {
   });
 };
 
-// POST /auth/user/my-account  -> cập nhật hồ sơ (yêu cầu đăng nhập)
+// POST /auth/user/my-account, PUT /user/profile, POST /user/profile/avatar -> cập nhật hồ sơ & ảnh đại diện
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, firstName, lastName, phone, dob, gender } = req.body;
+    const { name, firstName, lastName, phone, dob, gender, avatarUrl, avatar_url } = req.body || {};
     const updateData = {};
     if (phone !== undefined) updateData.phone = phone;
     if (dob) updateData.dob = dob;
@@ -240,11 +241,20 @@ exports.updateProfile = async (req, res) => {
       const full = [lastName, firstName].filter(Boolean).join(" ");
       if (full) updateData.full_name = full;
     }
-    await User.findByIdAndUpdate(req.user.id, updateData, { runValidators: true });
-    res.json({ success: true, message: "Cập nhật hồ sơ thành công" });
+    if (req.file) {
+      updateData.avatar_url = await saveUploadedFile(req, req.file);
+    } else if (avatarUrl !== undefined || avatar_url !== undefined) {
+      updateData.avatar_url = String(avatarUrl ?? avatar_url).trim() || null;
+    }
+    const updated = await User.findByIdAndUpdate(req.user.id, updateData, { new: true, runValidators: true });
+    res.json({
+      success: true,
+      message: "Cập nhật hồ sơ thành công",
+      avatarUrl: updated?.avatar_url || null,
+    });
   } catch (err) {
     console.error("Update profile error:", err);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 };
 

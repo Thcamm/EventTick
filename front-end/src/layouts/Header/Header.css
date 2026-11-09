@@ -125,6 +125,39 @@ header {
   font-size: 14px;
 }
 
+.account-menu .dropdown {
+  max-height: 480px;
+  overflow-y: auto;
+  min-width: 240px;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background-color: #e5e7eb;
+  margin: 4px 0;
+}
+
+.dropdown-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  padding: 6px 14px 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.resale-nav-btn {
+  background: linear-gradient(135deg, #f59e0b, #ef4444) !important;
+  color: #ffffff !important;
+  padding: 6px 14px !important;
+  border-radius: 20px !important;
+  font-weight: 700 !important;
+}
+
+.resale-nav-btn:hover {
+  opacity: 0.95;
+}
+
 .dropdown {
   display: none;
   position: absolute;

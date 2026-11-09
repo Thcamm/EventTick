@@ -10,17 +10,35 @@ export const PATHS = {
   EVENT_DETAILS: "/event/:eventId",
   EVENT_SEATS: "/event/seats/:eventId",
   SEARCH: "/search",
+  RESALE_MARKET: "/resale",
 
   // User
   USER_TICKETS: "/user/tickets",
   USER_TICKETS_TEST: "/user/tickets/test",
   USER_ACCOUNT: "/user/my-account",
 
+  // Organizer
+  ORGANIZER_KYC: "/organizer/kyc",
+  ORGANIZER_CONTRACTS: "/organizer/contracts",
+  ORGANIZER_EVENT_VOUCHERS: "/organizer/events/:eventId/vouchers",
+  ORGANIZER_EVENT_DASHBOARD: "/organizer/events/:eventId/dashboard",
+
+  // Staff (Online Check-in 100%)
+  STAFF_CHECK_IN: "/staff/check-in",
+  STAFF_TRAFFIC: "/staff/traffic",
+
   // Admin / Organizer
+  ADMIN_DASHBOARD: "/admin/dashboard",
   ADMIN_CREATE_EVENT: "/admin/events",
   ADMIN_CREATE_EVENT_TEST: "/admin/events/test",
   ADMIN_MY_EVENTS: "/admin/my-event",
   ADMIN_SEATMAP: "/admin/seatmap",
+  ADMIN_KYC: "/admin/kyc",
+  ADMIN_EVENTS_APPROVAL: "/admin/events-approval",
+  ADMIN_CATEGORIES: "/admin/categories",
+  ADMIN_USERS: "/admin/users",
+  ADMIN_SETTLEMENTS: "/admin/settlements",
+  ADMIN_REFUNDS: "/admin/refunds",
 
   // Payment
   PAYMENT: "/payment/:orderId",

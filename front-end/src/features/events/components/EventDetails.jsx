@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { axiosInstance } from "@/services/apiClient";
 import DOMPurify from "dompurify";
+import EventReviews from "./EventReviews";
 
 const FALLBACK_ZONE_COLORS = [
   "#ec4899",
@@ -363,6 +364,9 @@ const EventDetails = () => {
           </div>
         </div>
       )}
+
+      {/* ĐÁNH GIÁ SỰ KIỆN (UC16 / UC20) & LINK SANG CHỢ VÉ RESALE */}
+      <EventReviews eventId={eventId} eventTitle={eventName} />
     </div>
   );
 };

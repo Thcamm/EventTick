@@ -55,8 +55,9 @@ router.post("/sessions/:sessionId/tiers", ev.addTier);
 router.put("/tiers/:tierId", ev.updateTier);
 router.delete("/tiers/:tierId", ev.deleteTier);
 
-// UC28: voucher
+// UC28: voucher & thống kê hiệu quả khuyến mãi
 router.get("/events/:eventId/vouchers", vc.list);
+router.get("/events/:eventId/vouchers/stats", vc.list);
 router.post("/events/:eventId/vouchers", vc.create);
 router.put("/vouchers/:id", vc.update);
 router.delete("/vouchers/:id", vc.remove);

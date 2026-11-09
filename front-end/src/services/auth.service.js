@@ -66,6 +66,16 @@ export const authService = {
     const res = await apiClient.post("/auth/user/my-account", profileData);
     return res.data;
   },
+
+  // Upload user avatar (UC03)
+  async uploadAvatar(file) {
+    const formData = new FormData();
+    formData.append("avatar", file);
+    const res = await apiClient.post("/auth/user/my-account", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  },
 };
 
 export default authService;

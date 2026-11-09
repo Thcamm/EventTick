@@ -1,7 +1,20 @@
 const crypto = require("crypto");
 const mongoose = require("mongoose");
-const { Event, EventSession, TicketTier, Seat, Voucher, Order, Ticket, Payment, RefundRequest } = require("../models");
+const {
+  Event,
+  EventSession,
+  TicketTier,
+  Seat,
+  Voucher,
+  Order,
+  Ticket,
+  Payment,
+  RefundRequest,
+  ResaleListing,
+  EContract,
+} = require("../models");
 const seatLock = require("./seatLockService");
+const mailService = require("../utils/mailService");
 
 const HOLD_MS = seatLock.HOLD_SECONDS * 1000;
 const QR_SECRET = process.env.QR_SECRET || process.env.JWT_SECRET_KEY || "dev_qr_secret";
@@ -367,12 +380,30 @@ async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatIn
 }
 
 async function requestCustomerRefund({ orderId, buyerId, ticketId, reason }) {
-  const order = await Order.findById(orderId).populate("event_id");
+  const order = await Order.findById(orderId).populate("event_id").populate("session_id");
   if (!order || order.buyer_id.toString() !== String(buyerId)) throw httpError("Không tìm thấy đơn hàng", 404);
   if (order.status !== "PAID") throw httpError("Chỉ có thể yêu cầu hoàn tiền cho đơn đã thanh toán", 400);
 
-  if (order.event_id?.start_time && new Date() >= order.event_id.start_time) {
-    throw httpError("Sự kiện đã bắt đầu, không thể gửi yêu cầu hoàn tiền", 400);
+  const ev = order.event_id;
+  if (!ev) throw httpError("Không tìm thấy thông tin sự kiện của đơn hàng", 404);
+  if (ev.allow_refund === false) {
+    throw httpError("Sự kiện này không hỗ trợ hoàn/huỷ vé theo chính sách của Ban tổ chức", 400);
+  }
+
+  const startTime = order.session_id?.start_time || ev.start_time;
+  if (startTime) {
+    const now = Date.now();
+    const startMs = new Date(startTime).getTime();
+    if (now >= startMs) {
+      throw httpError("Sự kiện đã bắt đầu, không thể gửi yêu cầu hoàn tiền", 400);
+    }
+    const deadlineHours = Number(ev.refund_deadline_hours ?? 48);
+    if (deadlineHours > 0 && startMs - now < deadlineHours * 3600 * 1000) {
+      throw httpError(
+        `Đã quá thời hạn hoàn vé (phải gửi yêu cầu trước giờ diễn tối thiểu ${deadlineHours} giờ)`,
+        400,
+      );
+    }
   }
 
   let refundAmount = order.total_amount;
@@ -406,6 +437,104 @@ async function requestCustomerRefund({ orderId, buyerId, ticketId, reason }) {
   return refundRequest;
 }
 
+/**
+ * UC23 / UC43: Huỷ sự kiện & hoàn tiền hàng loạt (Bulk Refund) cho toàn bộ đơn PAID,
+ * nhả các đơn PENDING_PAYMENT, huỷ các tin đăng bán lại (ResaleListing) và gửi thông báo email.
+ */
+async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị huỷ theo quyết định của ban tổ chức / quản trị") {
+  const e = await Event.findById(eventId);
+  if (!e) throw httpError("Không tìm thấy sự kiện", 404);
+
+  e.status = "CANCELLED";
+  await e.save();
+
+  await EventSession.updateMany({ event_id: e._id }, { status: "CANCELLED" });
+  await EContract.updateOne({ event_id: e._id, status: "WAITING_SIGN" }, { status: "REJECTED" });
+
+  // 1. Nhả toàn bộ đơn đang chờ thanh toán (PENDING_PAYMENT)
+  const releasedPendingOrders = await cancelPendingOrdersOfEvent(e._id);
+
+  // 2. Huỷ mọi tin đăng bán lại đang ACTIVE của sự kiện này
+  const eventTickets = await Ticket.find({ event_id: e._id }).select("_id seat_id").lean();
+  const eventTicketIds = eventTickets.map((t) => t._id);
+  let cancelledResaleCount = 0;
+  if (eventTicketIds.length) {
+    const resaleRes = await ResaleListing.updateMany(
+      { ticket_id: { $in: eventTicketIds }, status: "ACTIVE" },
+      { $set: { status: "CANCELLED" } },
+    );
+    cancelledResaleCount = resaleRes.modifiedCount || 0;
+  }
+
+  // 3. Hoàn tiền hàng loạt mọi đơn PAID của sự kiện
+  const paidOrders = await Order.find({ event_id: e._id, status: "PAID" }).populate("buyer_id", "email full_name username");
+
+  let refundedCount = 0;
+  let totalRefundAmount = 0;
+  let notifiedBuyersCount = 0;
+
+  for (const order of paidOrders) {
+    order.status = "REFUNDED";
+    await order.save();
+
+    await Ticket.updateMany(
+      { order_id: order._id, status: { $in: ["VALID", "LISTED_RESALE"] } },
+      { status: "REFUNDED" },
+    );
+
+    if (order.seat_ids?.length) {
+      await Seat.updateMany(
+        { _id: { $in: order.seat_ids } },
+        { $set: { status: "AVAILABLE" }, $unset: { locked_by_user_id: 1, lock_expires_at: 1 } },
+      );
+    }
+    if (order.items?.length) {
+      await restoreStock(order.items);
+    }
+
+    await RefundRequest.findOneAndUpdate(
+      { order_id: order._id, refund_type: "EVENT_BULK_REFUND" },
+      {
+        $setOnInsert: {
+          order_id: order._id,
+          user_id: order.buyer_id?._id || order.buyer_id,
+          refund_type: "EVENT_BULK_REFUND",
+          refund_amount: order.total_amount,
+          reason,
+          status: "COMPLETED",
+          processed_at: new Date(),
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    const buyerEmail = order.customer_info?.email || order.buyer_id?.email;
+    const buyerName = order.customer_info?.full_name || order.buyer_id?.full_name || order.buyer_id?.username;
+    if (buyerEmail) {
+      const sent = await mailService.sendEventCancellationRefundEmail(buyerEmail, {
+        buyerName,
+        eventTitle: e.title,
+        orderCode: order.order_code,
+        refundAmount: order.total_amount,
+        reason,
+      });
+      if (sent) notifiedBuyersCount++;
+    }
+
+    refundedCount++;
+    totalRefundAmount += order.total_amount;
+  }
+
+  return {
+    event: e,
+    refundedOrdersCount: refundedCount,
+    totalRefundAmount,
+    releasedPendingOrders,
+    cancelledResaleCount,
+    notifiedBuyersCount,
+  };
+}
+
 /** Job nền: mỗi 30 giây hoàn kho + trả ghế các đơn quá hạn. */
 let timer = null;
 function startExpirationJob(intervalMs = 30_000) {
@@ -422,6 +551,7 @@ module.exports = {
   createOrderHold,
   updateCheckoutInfo,
   requestCustomerRefund,
+  bulkRefundAndCancelEvent,
   releaseExpiredOrders,
   cancelPendingOrder,
   cancelPendingOrdersOfEvent,

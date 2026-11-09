@@ -68,19 +68,26 @@ function parseSession(raw, i = 0, { requireFuture = true } = {}) {
   const start = date(r.startTime ?? r.eventDate, `Suất ${i + 1}: thời gian bắt đầu`);
   const end = r.endTime ? date(r.endTime, `Suất ${i + 1}: thời gian kết thúc`) : new Date(start.getTime() + 3 * HOUR);
   if (end <= start) throw httpError(`Suất ${i + 1}: giờ kết thúc phải sau giờ bắt đầu`, 400);
-  if (requireFuture && start <= new Date()) throw httpError(`Suất ${i + 1}: phải bắt đầu trong tương lai`, 400);
+  if (requireFuture && start <= new Date()) {
+    throw httpError(`Suất ${i + 1}: thời gian bắt đầu (${start.toLocaleString("vi-VN")}) phải diễn ra trong tương lai`, 400);
+  }
   return { name: str(r.name || `Suất diễn ${i + 1}`, 255, "tên suất"), start_time: start, end_time: end };
 }
 
 function parseTier(raw, sessionStart, label = "Hạng vé") {
   const r = raw || {};
   const total = intIn(r.totalQuantity ?? r.quantity ?? r.stock ?? r.totalCapacity, 1, 100000, `${label}: số lượng`);
-  const min = intIn(r.minPerOrder ?? 1, 1, 100, `${label}: tối thiểu mỗi đơn`);
-  const max = intIn(r.maxPerOrder ?? 4, 1, 100, `${label}: tối đa mỗi đơn`);
-  if (min > max) throw httpError(`${label}: tối thiểu mỗi đơn không được lớn hơn tối đa`, 400);
+  const min = intIn(r.minPerOrder ?? r.minOrder ?? 1, 1, 100, `${label}: tối thiểu mỗi đơn`);
+  const rawMax = r.maxPerOrder ?? r.maxOrder;
+  const max = intIn(rawMax !== undefined ? rawMax : Math.max(10, min), 1, 100, `${label}: tối đa mỗi đơn`);
+  if (min > max) throw httpError(`${label}: số vé tối thiểu mỗi đơn (${min}) không được lớn hơn tối đa (${max})`, 400);
   const from = r.saleStartTime ? date(r.saleStartTime, `${label}: giờ mở bán`) : new Date();
-  const to = r.saleEndTime ? date(r.saleEndTime, `${label}: giờ đóng bán`) : sessionStart;
-  if (to <= from) throw httpError(`${label}: giờ đóng bán phải sau giờ mở bán`, 400);
+  const to = r.saleEndTime ? date(r.saleEndTime, `${label}: giờ đóng bán`) : (sessionStart || new Date(from.getTime() + 7 * 24 * HOUR));
+  let safeTo = to;
+  if (to <= from) {
+    console.warn(`⚠️ [parseTier] ${label}: giờ đóng bán (${to.toISOString()}) <= giờ mở bán (${from.toISOString()}), tự động điều chỉnh đóng bán sau mở bán 1 giờ`);
+    safeTo = new Date(from.getTime() + HOUR);
+  }
   if (r.zoneColor && !COLOR.test(r.zoneColor)) throw httpError(`${label}: zoneColor phải dạng #RRGGBB`, 400);
   return {
     name: str(r.name, 150, `${label}: tên`),
@@ -90,7 +97,7 @@ function parseTier(raw, sessionStart, label = "Hạng vé") {
     min_per_order: min,
     max_per_order: max,
     sale_start_time: from,
-    sale_end_time: to,
+    sale_end_time: safeTo,
     zone_color: r.zoneColor || undefined,
     description: str(r.description ?? r.desc, 500, `${label}: mô tả`, { required: false }) || "",
   };
@@ -119,8 +126,18 @@ function parseForm(schema) {
 }
 
 async function findCategory(name) {
-  const c = await Category.findOne({ $or: [{ name }, { slug: name }] });
-  if (!c) throw httpError(`Không có danh mục "${name}"`, 400);
+  if (!name) {
+    const fallback = await Category.findOne({ slug: "khac" }) || await Category.findOne();
+    return fallback;
+  }
+  let c = await Category.findOne({ $or: [{ name }, { slug: name }] });
+  if (!c) {
+    c = await Category.findOne({ name: new RegExp(`^${name.trim()}$`, "i") });
+  }
+  if (!c) {
+    c = (await Category.findOne({ slug: "khac" })) || (await Category.findOne());
+  }
+  if (!c) throw httpError(`Không tìm thấy danh mục phù hợp cho "${name}"`, 400);
   return c;
 }
 
@@ -150,24 +167,40 @@ function tierToClient(t) {
 // ------------------------------------------------------------------ UC22: tạo sự kiện
 // POST /v1/events (multipart: data = JSON, backgroundImage, eventImage)
 exports.create = ah(async (req, res) => {
+  console.log(`\n================================================================`);
+  console.log(`🚀 [Tạo sự kiện] Nhận request POST /v1/events từ User: ${req.user?.username || req.user?.id || "Ẩn danh"}`);
+
   let payload;
-  try { payload = JSON.parse(req.body?.data || "{}"); } catch { throw httpError("Trường data không phải JSON hợp lệ", 400); }
+  try {
+    payload = JSON.parse(req.body?.data || "{}");
+  } catch (parseErr) {
+    console.error("❌ [Tạo sự kiện] Lỗi parse JSON trường data:", parseErr.message);
+    throw httpError("Trường data không phải JSON hợp lệ", 400);
+  }
+
   const files = Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat();
   const bgFile = files.find((f) => f.fieldname === "backgroundImage");
   const thumbFile = files.find((f) => f.fieldname === "eventImage");
+
+  console.log(`📝 [Tạo sự kiện] Tên: "${payload.title || payload.eventName || "(chưa đặt tên)"}" | Danh mục: "${payload.category || "(mặc định)"}" | Số suất diễn: ${payload.sessions?.length || 0} | File ảnh tải lên: ${files.length}`);
+
   for (const f of [bgFile, thumbFile].filter(Boolean)) {
-    if (!["jpeg", "png", "webp"].includes(sniff(f.buffer))) throw httpError("Ảnh phải là JPG, PNG hoặc WEBP", 400);
+    const fileKind = sniff(f.buffer);
+    if (!["jpeg", "png", "webp"].includes(fileKind)) {
+      console.error(`❌ [Tạo sự kiện] File "${f.originalname}" không đúng định dạng: ${fileKind}`);
+      throw httpError(`Ảnh "${f.originalname}" phải là định dạng JPG, PNG hoặc WEBP`, 400);
+    }
   }
 
   const draft = bool(payload.saveAsDraft);
   const title = str(payload.title || payload.eventName, 255, "tên sự kiện");
-  const category = await findCategory(payload.category || "Khác").catch(() => Category.findOne({ slug: "khac" }));
-  if (!category) throw httpError("Danh mục không hợp lệ", 400);
+  const category = await findCategory(payload.category || "Khác");
+  console.log(`📂 [Tạo sự kiện] Khớp danh mục DB: "${category.name}" (ID: ${category._id})`);
 
   const rawSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
   if (!rawSessions.length) throw httpError("Cần ít nhất 1 suất diễn", 400);
   if (rawSessions.length > 30) throw httpError("Tối đa 30 suất diễn", 400);
-  const sessionDefs = rawSessions.map((s, i) => parseSession(s, i));
+  const sessionDefs = rawSessions.map((s, i) => parseSession(s, i, { requireFuture: !draft }));
   const tierLists = rawSessions.map((s, i) => {
     const list = s.tickets || s.zones || [];
     if (!draft && !list.length) throw httpError(`Suất ${i + 1}: cần ít nhất 1 hạng vé`, 400);
@@ -175,7 +208,7 @@ exports.create = ah(async (req, res) => {
   });
 
   const venue = str(payload.venueName || payload.location || payload.eventAddress, 255, "địa điểm");
-  const city = str(payload.city || venue.split(",").pop().trim(), 100, "thành phố");
+  const city = str(payload.city || (venue ? venue.split(",").pop().trim() : "") || "Toàn quốc", 100, "thành phố");
   const form = parseForm(payload.customFormSchema);
   const markup = num(payload.maxResaleMarkupPct ?? 0, 0, 100, "maxResaleMarkupPct");
   const refundHours = intIn(payload.refundDeadlineHours ?? 48, 0, 720, "refundDeadlineHours");
@@ -186,31 +219,64 @@ exports.create = ah(async (req, res) => {
     if (bgFile) bannerUrl = await saveUploadedFile(req, bgFile);
     if (thumbFile) thumbUrl = await saveUploadedFile(req, thumbFile);
   } catch (e) {
-    console.error("Upload ảnh lỗi:", e.message || e);
-    throw httpError("Không tải được ảnh lên (kiểm tra cấu hình Cloudinary trong .env)", 502);
+    console.error("❌ [Tạo sự kiện] Upload ảnh lỗi:", e.message || e);
+    throw httpError("Không tải được ảnh lên (hãy thử lại hoặc kiểm tra ảnh)", 502);
   }
 
   const created = { event: null };
   try {
     const event = await Event.create({
-      organizer_id: req.user.id, category_id: category._id, title,
+      organizer_id: req.user.id,
+      category_id: category._id,
+      title,
       description: String(payload.description || payload.eventDesc || "").slice(0, 20000),
-      banner_url: bannerUrl, thumbnail_url: thumbUrl || bannerUrl, venue_name: venue, city,
+      banner_url: bannerUrl,
+      thumbnail_url: thumbUrl || bannerUrl,
+      venue_name: venue,
+      city,
       start_time: new Date(Math.min(...sessionDefs.map((s) => s.start_time))),
       end_time: new Date(Math.max(...sessionDefs.map((s) => s.end_time))),
-      allow_resale: bool(payload.allowResale), max_resale_markup_pct: markup,
-      allow_refund: bool(payload.allowRefund), refund_deadline_hours: refundHours,
+      allow_resale: bool(payload.allowResale),
+      max_resale_markup_pct: markup,
+      allow_refund: bool(payload.allowRefund),
+      refund_deadline_hours: refundHours,
       custom_form_schema: form || undefined,
-      organizer_name: payload.organizerName || req.user.username, organizer_info: payload.organizerInfo || "",
+      organizer_name: payload.organizerName || req.user.username,
+      organizer_info: payload.organizerInfo || "",
       event_type: payload.eventType === "online" ? "online" : "offline",
       status: draft ? "DRAFT" : "PENDING",
     });
     created.event = event;
+
     const sessions = await EventSession.insertMany(sessionDefs.map((s) => ({ ...s, event_id: event._id })));
     const tiers = tierLists.flatMap((list, i) => list.map((t) => ({ ...t, event_id: event._id, session_id: sessions[i]._id })));
     if (tiers.length) await TicketTier.insertMany(tiers);
     await recalcEvent(event._id);
+
+    // Lưu thông tin thanh toán của Organizer nếu có gửi kèm
+    if (payload.paymentInfo && req.user.id) {
+      const { accountOwner, accountNumber, bankName, branch } = payload.paymentInfo;
+      if (accountOwner || accountNumber || bankName) {
+        await OrganizerProfile.findOneAndUpdate(
+          { user_id: req.user.id },
+          {
+            $set: {
+              bank_account_name: accountOwner,
+              bank_account_number: accountNumber,
+              bank_name: bankName,
+              bank_branch: branch,
+            },
+          },
+          { upsert: false }
+        ).catch((e) => console.warn("⚠️ Lưu paymentInfo organizer thất bại:", e.message));
+      }
+    }
+
     await audit(req, draft ? "EVENT_CREATE_DRAFT" : "EVENT_CREATE", "events", event._id);
+
+    console.log(`✅ [Tạo sự kiện THÀNH CÔNG] Event ID: ${event._id} | Tiêu đề: "${event.title}" | Trạng thái: ${event.status}`);
+    console.log(`================================================================\n`);
+
     res.status(201).json({
       success: true,
       message: draft ? "Đã lưu bản nháp." : "Tạo sự kiện thành công! Sự kiện đang chờ Admin phê duyệt.",
@@ -218,7 +284,9 @@ exports.create = ah(async (req, res) => {
       status: event.status,
     });
   } catch (err) {
+    console.error(`💥 [Tạo sự kiện THẤT BẠI]:`, err.message || err);
     if (created.event) {
+      console.log(`🧹 [Rollback] Đang dọn dẹp eventId: ${created.event._id}`);
       await TicketTier.deleteMany({ event_id: created.event._id });
       await EventSession.deleteMany({ event_id: created.event._id });
       await Event.deleteOne({ _id: created.event._id });
@@ -365,21 +433,42 @@ exports.withdraw = ah(async (req, res) => {
   res.json({ success: true, message: "Đã rút lại, sự kiện trở về bản nháp", status: claimed.status });
 });
 
-// POST /v1/organizer/events/:id/cancel — huỷ sự kiện (chưa có đơn đã thanh toán)
+// POST /v1/organizer/events/:id/cancel — UC23: huỷ sự kiện & tự động kích hoạt hoàn tiền hàng loạt (UC43) nếu đã có đơn PAID
 exports.cancel = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   if (["CANCELLED", "ENDED"].includes(e.status)) throw httpError(`Sự kiện đã ở trạng thái ${e.status}`, 409);
+  const reason = str(req.body?.reason) || "Ban tổ chức hủy sự kiện";
   const paid = await Order.countDocuments({ event_id: e._id, status: "PAID" });
+
   if (paid > 0) {
-    throw httpError(`Sự kiện đã có ${paid} đơn đã thanh toán. Cần liên hệ Admin để hoàn tiền hàng loạt (UC43) trước khi huỷ.`, 409);
+    if (req.body?.autoRefund === false) {
+      throw httpError(`Sự kiện đã có ${paid} đơn đã thanh toán. Bỏ cờ autoRefund=false hoặc liên hệ Admin để hoàn tiền hàng loạt (UC43).`, 409);
+    }
+    const bulkResult = await bookingService.bulkRefundAndCancelEvent(e._id, reason);
+    await audit(req, "EVENT_CANCEL_WITH_BULK_REFUND", "events", e._id, {
+      refundedOrdersCount: bulkResult.refundedOrdersCount,
+      totalRefundAmount: bulkResult.totalRefundAmount,
+      releasedPendingOrders: bulkResult.releasedPendingOrders,
+      reason,
+    });
+    return res.json({
+      success: true,
+      message: `Đã hủy sự kiện và hoàn tiền hàng loạt cho ${bulkResult.refundedOrdersCount} đơn hàng`,
+      status: "CANCELLED",
+      releasedOrders: bulkResult.releasedPendingOrders,
+      refundedCount: bulkResult.refundedOrdersCount,
+      totalRefundAmount: bulkResult.totalRefundAmount,
+      notifiedBuyersCount: bulkResult.notifiedBuyersCount,
+    });
   }
+
   const claimed = await Event.findOneAndUpdate({ _id: e._id, status: { $in: ["DRAFT", "PENDING", "APPROVED", "PUBLISHED"] } }, { status: "CANCELLED" }, { new: true });
   if (!claimed) throw httpError("Trạng thái sự kiện vừa thay đổi", 409);
   const released = await bookingService.cancelPendingOrdersOfEvent(e._id);
   await EventSession.updateMany({ event_id: e._id }, { status: "CANCELLED" });
   await EContract.updateOne({ event_id: e._id, status: "WAITING_SIGN" }, { status: "REJECTED" });
-  await audit(req, "EVENT_CANCEL", "events", e._id, { releasedOrders: released });
-  res.json({ success: true, message: "Đã huỷ sự kiện", status: "CANCELLED", releasedOrders: released });
+  await audit(req, "EVENT_CANCEL", "events", e._id, { releasedOrders: released, reason });
+  res.json({ success: true, message: "Đã huỷ sự kiện", status: "CANCELLED", releasedOrders: released, refundedCount: 0 });
 });
 
 // ------------------------------------------------------------------ suất diễn (chỉ khi DRAFT)

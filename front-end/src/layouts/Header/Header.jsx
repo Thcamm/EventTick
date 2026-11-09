@@ -71,6 +71,11 @@ const Header = () => {
         </div>
 
         <div className="actions">
+          {/* Resale Market */}
+          <Link to={PATHS.RESALE_MARKET}>
+            <button className="resale-nav-btn">🔥 Chợ vé Resale</button>
+          </Link>
+
           {/* Navigation buttons */}
           <Link to={PATHS.ADMIN_CREATE_EVENT}>
             <button>Tạo sự kiện</button>
@@ -93,14 +98,53 @@ const Header = () => {
             <div className="account-menu">
               <button className="account-btn">
                 👤 {user.username || user.userName || "Tài khoản"}
+                {user.role && user.role !== "CUSTOMER" && ` (${user.role})`}
               </button>
               <div className="dropdown">
+                <div className="dropdown-group-label">Khách hàng</div>
                 <Link to={PATHS.USER_TICKETS}>🎟 Vé của tôi</Link>
-                <Link to={PATHS.ADMIN_MY_EVENTS}>📅 Sự kiện của tôi</Link>
-                {user.role === "ADMIN" && (
-                  <Link to={PATHS.ADMIN_SEATMAP}>🗺 Dựng sơ đồ chỗ ngồi</Link>
-                )}
+                <Link to={PATHS.RESALE_MARKET}>🔄 Chợ vé bán lại</Link>
                 <Link to={PATHS.USER_ACCOUNT}>⚙️ Tài khoản của tôi</Link>
+
+                {/* Organizer actions */}
+                {(user.role === "ORGANIZER" || user.role === "ADMIN") && (
+                  <>
+                    <div className="dropdown-divider" />
+                    <div className="dropdown-group-label">Ban tổ chức</div>
+                    <Link to={PATHS.ADMIN_MY_EVENTS}>📅 Sự kiện của tôi</Link>
+                    <Link to={PATHS.ADMIN_CREATE_EVENT}>➕ Đăng ký sự kiện mới</Link>
+                    <Link to={PATHS.ORGANIZER_KYC}>📋 Hồ sơ KYC BTC</Link>
+                    <Link to={PATHS.ORGANIZER_CONTRACTS}>✍️ Hợp đồng điện tử</Link>
+                  </>
+                )}
+
+                {/* Staff / Gate Check-in actions */}
+                {(user.role === "STAFF" || user.role === "ORGANIZER" || user.role === "ADMIN") && (
+                  <>
+                    <div className="dropdown-divider" />
+                    <div className="dropdown-group-label">Kiểm soát vé 100% Online</div>
+                    <Link to={PATHS.STAFF_CHECK_IN}>📷 Soát vé QR (Gate)</Link>
+                    <Link to={PATHS.STAFF_TRAFFIC}>📊 Lưu lượng vào cổng</Link>
+                  </>
+                )}
+
+                {/* Admin actions */}
+                {user.role === "ADMIN" && (
+                  <>
+                    <div className="dropdown-divider" />
+                    <div className="dropdown-group-label">Quản trị hệ thống</div>
+                    <Link to={PATHS.ADMIN_DASHBOARD}>👑 Admin Dashboard</Link>
+                    <Link to={PATHS.ADMIN_EVENTS_APPROVAL}>📋 Phê duyệt sự kiện & HĐ</Link>
+                    <Link to={PATHS.ADMIN_KYC}>🔍 Duyệt hồ sơ KYC BTC</Link>
+                    <Link to={PATHS.ADMIN_SETTLEMENTS}>💰 Đối soát & Giải ngân</Link>
+                    <Link to={PATHS.ADMIN_REFUNDS}>⚡ Quản lý hoàn tiền</Link>
+                    <Link to={PATHS.ADMIN_USERS}>👥 Quản lý người dùng</Link>
+                    <Link to={PATHS.ADMIN_CATEGORIES}>🏷 Danh mục & Hoa hồng</Link>
+                    <Link to={PATHS.ADMIN_SEATMAP}>🗺 Dựng sơ đồ chỗ ngồi</Link>
+                  </>
+                )}
+
+                <div className="dropdown-divider" />
                 <p style={{ margin: 0 }}>
                   <a href="#logout" onClick={handleLogout}>
                     🚪 Đăng xuất

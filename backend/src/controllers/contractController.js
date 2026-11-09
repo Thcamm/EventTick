@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { Event, EventSession, EContract, OrganizerProfile } = require("../models");
+const { Event, EventSession, EContract, OrganizerProfile, Category } = require("../models");
 const { savePrivate, sendPrivate } = require("../services/privateStorage");
 const contractSvc = require("../services/contractService");
 const { sniff } = require("../utils/fileType");
@@ -59,13 +59,20 @@ exports.adminLegalDoc = ah(async (req, res) => {
  */
 exports.approveEvent = ah(async (req, res) => {
   const id = validId(req.params.id, "ID sự kiện");
-  const rate = Number(req.body?.commissionRatePct);
-  if (!Number.isFinite(rate) || rate < 0 || rate > 50) throw httpError("commissionRatePct phải từ 0 đến 50 (%)", 400);
   const customTerms = req.body?.customTerms ? str(req.body.customTerms, 5000, "điều khoản bổ sung") : undefined;
 
   const event = await Event.findById(id);
   if (!event) throw httpError("Không tìm thấy sự kiện", 404);
   if (event.status !== "PENDING") throw httpError(`Sự kiện đang ở trạng thái ${event.status}, chỉ duyệt được sự kiện PENDING`, 409);
+
+  let rate = req.body?.commissionRatePct;
+  if (rate === undefined || rate === null || rate === "") {
+    const cat = event.category_id ? await Category.findById(event.category_id).select("default_commission_pct") : null;
+    rate = Number(cat?.default_commission_pct ?? 10);
+  } else {
+    rate = Number(rate);
+  }
+  if (!Number.isFinite(rate) || rate < 0 || rate > 50) throw httpError("commissionRatePct phải từ 0 đến 50 (%)", 400);
 
   const [profile, sessions] = await Promise.all([
     OrganizerProfile.findOne({ user_id: event.organizer_id }),

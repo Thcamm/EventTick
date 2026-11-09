@@ -4,8 +4,8 @@ import { useAuth } from "@/context/AuthContext";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import { PATHS } from "./paths";
 
-const ProtectedRoute = ({ children, redirectTo = PATHS.LOGIN }) => {
-  const { isAuthenticated, loading } = useAuth();
+const ProtectedRoute = ({ children, allowedRoles, redirectTo = PATHS.LOGIN }) => {
+  const { user, isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -15,6 +15,10 @@ const ProtectedRoute = ({ children, redirectTo = PATHS.LOGIN }) => {
   if (!isAuthenticated) {
     const returnUrl = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`${redirectTo}?returnTo=${returnUrl}`} replace />;
+  }
+
+  if (allowedRoles && (!user?.role || !allowedRoles.includes(user.role))) {
+    return <Navigate to={PATHS.HOME} replace />;
   }
 
   return children ? children : <Outlet />;

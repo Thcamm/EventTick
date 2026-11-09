@@ -15,18 +15,29 @@ function validId(id, label = "ID") {
 /** Bọc controller async: lỗi có statusCode trả đúng mã, lỗi DB/validate trả 4xx, còn lại 500 */
 const ah = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch((err) => {
-    if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
+    const routeInfo = `${req.method} ${req.originalUrl || req.url}`;
+    if (err.statusCode) {
+      console.error(`❌ [API Error ${err.statusCode}] ${routeInfo}: ${err.message}`);
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
     if (err.name === "ValidationError") {
       const msg = Object.values(err.errors || {}).map((e) => e.message).join("; ") || err.message;
+      console.error(`❌ [Validation Error 400] ${routeInfo}: ${msg}`);
       return res.status(400).json({ success: false, message: msg });
     }
-    if (err.name === "CastError") return res.status(400).json({ success: false, message: "Dữ liệu không hợp lệ" });
-    if (err.code === 11000) return res.status(409).json({ success: false, message: "Dữ liệu bị trùng (đã tồn tại)" });
+    if (err.name === "CastError") {
+      console.error(`❌ [CastError 400] ${routeInfo}:`, err.message);
+      return res.status(400).json({ success: false, message: "Dữ liệu không hợp lệ" });
+    }
+    if (err.code === 11000) {
+      console.error(`❌ [Duplicate Key 409] ${routeInfo}:`, err.keyValue || err.message);
+      return res.status(409).json({ success: false, message: "Dữ liệu bị trùng (đã tồn tại)" });
+    }
     if (err.code === 121) {
-      console.error("Mongo validator từ chối:", JSON.stringify(err.errInfo?.details || err.message).slice(0, 500));
+      console.error(`❌ [Mongo validator 400] ${routeInfo}:`, JSON.stringify(err.errInfo?.details || err.message).slice(0, 500));
       return res.status(400).json({ success: false, message: "Dữ liệu không đúng định dạng" });
     }
-    console.error(err);
+    console.error(`💥 [Server Error 500] ${routeInfo}:`, err);
     res.status(500).json({ success: false, message: "Lỗi server nội bộ" });
   });
 

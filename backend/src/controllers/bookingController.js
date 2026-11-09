@@ -124,6 +124,7 @@ exports.myTickets = async (req, res) => {
     res.json({
       tickets: tickets.map((t) => ({
         _id: t._id,
+        orderId: t.order_id,
         ticketCode: t.ticket_code,
         qrHash: t.qr_hash_signature,
         eventId: t.event_id?._id || t.event_id,
@@ -226,17 +227,61 @@ exports.getOrder = async (req, res) => {
   }
 };
 
-// POST /booking/check-in (STAFF/ADMIN quét vé)
+// POST /booking/check-in (STAFF/ADMIN quét vé QR trực tuyến)
 exports.checkInTicket = async (req, res) => {
   try {
-    const { ticketCode } = req.body;
-    if (!ticketCode) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
+    const rawInput = req.body?.ticketCode || req.body?.qrData || "";
+    if (!rawInput) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
 
-    const code = String(ticketCode).trim().toUpperCase();
+    let code = "";
+    let providedHash = req.body?.qrHash || req.body?.signature || "";
+
+    // Hỗ trợ payload QR dạng JSON {"ticketCode":"...","qrHash":"..."} hoặc chuỗi ghép "TK-XXX.hash" / "TK-XXX|hash"
+    const trimmed = String(rawInput).trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        code = String(parsed.ticketCode || parsed.code || "").trim().toUpperCase();
+        if (!providedHash) providedHash = String(parsed.qrHash || parsed.signature || "").trim();
+      } catch {
+        return res.status(400).json({ success: false, message: "Dữ liệu QR không hợp lệ" });
+      }
+    } else if (/[.|:]/.test(trimmed)) {
+      const [cPart, hPart] = trimmed.split(/[.|:]/) ;
+      code = String(cPart || "").trim().toUpperCase();
+      if (!providedHash && hPart) providedHash = String(hPart).trim();
+    } else {
+      code = trimmed.toUpperCase();
+    }
+
+    if (!code) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
+
     const ticket = await Ticket.findOne({ ticket_code: code })
       .populate("event_id", "title venue_name")
       .populate("tier_id", "name");
     if (!ticket) return res.status(404).json({ success: false, message: "Mã vé không hợp lệ" });
+
+    // Xác thực chữ ký bảo mật HMAC-SHA256 của vé (chống vé giả / can thiệp DB hoặc QR giả mạo)
+    const crypto = require("crypto");
+    const expectedSig = bookingService.signTicket(ticket.ticket_code);
+    const storedSig = String(ticket.qr_hash_signature || "");
+    const safeEq = (a, b) => {
+      const ba = Buffer.from(String(a));
+      const bb = Buffer.from(String(b));
+      return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+    };
+    if (!storedSig || !safeEq(storedSig, expectedSig)) {
+      return res.status(400).json({
+        success: false,
+        message: "Chữ ký bảo mật của vé không hợp lệ (vé có dấu hiệu bị can thiệp)",
+      });
+    }
+    if (providedHash && !safeEq(String(providedHash).trim().toLowerCase(), expectedSig.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "Chữ ký QR không khớp (mã QR giả mạo hoặc đã bị thu hồi)",
+      });
+    }
 
     // Chỉ ADMIN hoặc STAFF được phân công cho sự kiện này mới được soát vé
     if (req.user.role !== "ADMIN") {

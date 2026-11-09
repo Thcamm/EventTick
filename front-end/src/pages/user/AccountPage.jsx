@@ -19,6 +19,8 @@ const AccountPage = () => {
   const [phone, setPhone] = useState("");
   const [dob, setDob] = useState("");
   const [gender, setGender] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [pwdData, setPwdData] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [pwdMsg, setPwdMsg] = useState({ text: "", type: "" });
@@ -51,6 +53,7 @@ const AccountPage = () => {
           setPhone(user.phone || "");
           setDob(user.dob ? user.dob.substring(0, 10) : "");
           setGender(user.gender || "");
+          setAvatarUrl(user.avatarUrl || "");
         }
       } catch (err) {
         console.error("Error fetching user:", err);
@@ -58,6 +61,30 @@ const AccountPage = () => {
     };
     fetchUser();
   }, []);
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Vui lòng chọn file hình ảnh (PNG, JPG, JPEG, WEBP)!");
+      return;
+    }
+
+    try {
+      setAvatarUploading(true);
+      const res = await authService.uploadAvatar(file);
+      if (res.avatarUrl) {
+        setAvatarUrl(res.avatarUrl);
+      }
+      alert("Cập nhật ảnh đại diện thành công!");
+    } catch (err) {
+      console.error("Lỗi khi tải ảnh đại diện:", err);
+      alert(err.response?.data?.message || "Không thể tải ảnh đại diện lên.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   const validateForm = () => {
     const newErrors = {};
@@ -140,6 +167,34 @@ const AccountPage = () => {
   return (
     <div className="account-page-container">
       <div className="account-page-sidebar">
+        <div className="account-avatar-wrapper" style={{ textAlign: "center", marginBottom: "20px" }}>
+          <img
+            src={avatarUrl ? (avatarUrl.startsWith("http") ? avatarUrl : `http://localhost:5000${avatarUrl}`) : "https://via.placeholder.com/120?text=Avatar"}
+            alt="Avatar"
+            style={{ width: "110px", height: "110px", borderRadius: "50%", objectFit: "cover", border: "3px solid #ff424e", marginBottom: "10px" }}
+          />
+          <div style={{ marginTop: "8px" }}>
+            <label htmlFor="avatarInput" className="account-avatar-btn" style={{
+              background: "#333",
+              color: "#fff",
+              padding: "6px 12px",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "13px",
+              display: "inline-block",
+            }}>
+              {avatarUploading ? "Đang tải..." : "Đổi ảnh đại diện"}
+            </label>
+            <input
+              type="file"
+              id="avatarInput"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleAvatarChange}
+              disabled={avatarUploading}
+            />
+          </div>
+        </div>
         <h2>Tài khoản của {defaultName || [defaultLastName, defaultFirstName].filter(Boolean).join(" ") || userName}</h2>
       </div>
       <div className="account-page-main">

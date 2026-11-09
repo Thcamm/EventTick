@@ -49,7 +49,11 @@ app.use("/v1/auth", authRoutes);
 app.use("/v1/events", eventRoutes);
 app.use("/v1/categories", categoryRoutes);
 app.use("/v1/booking", bookingRoutes);
-app.use("/v1/payment", require("./routes/paymentRoutes"));
+const paymentRoutes = require("./routes/paymentRoutes");
+const paymentCtrl = require("./controllers/paymentController");
+app.use("/v1/payment", paymentRoutes);
+// ponytail: alias SePay default webhook path (/hooks/sepay-payment) so both URLs work; remove when URL standardized
+app.post(["/hooks/sepay-payment", "/v1/hooks/sepay-payment"], paymentCtrl.sepayWebhook);
 app.use("/v1/resale", resaleRoutes);
 const kycRoutes = require("./routes/kycRoutes");
 app.use("/v1/organizer/kyc", kycRoutes.organizer);
@@ -72,9 +76,10 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   if (err && err.name === "MulterError") {
     const msg = err.code === "LIMIT_FILE_SIZE" ? "Tệp quá lớn (tối đa 10MB)" : "Tệp tải lên không hợp lệ";
+    console.error(`❌ [MulterError 400] ${req.method} ${req.originalUrl || req.url}:`, err.message || err.code);
     return res.status(400).json({ success: false, message: msg });
   }
-  console.error(err);
+  console.error(`💥 [Unhandled Server Error 500] ${req.method} ${req.originalUrl || req.url}:`, err);
   res.status(500).json({ success: false, message: "Lỗi server nội bộ" });
 });
 

@@ -25,7 +25,7 @@ const CreateEventPage = () => {
   });
   const [stepTwoData, setStepTwoData] = useState(null);
   const [stepThreeData, setStepThreeData] = useState(null);
-  const [stepFourData, setStepFourData] = useState(null);
+  const [, setStepFourData] = useState(null);
 
   const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -103,11 +103,12 @@ const CreateEventPage = () => {
       });
       // notify user and redirect to My Events
       alert("Tạo sự kiện thành công! Sự kiện của bạn đang ở trạng thái 'Chờ Admin duyệt'.");
-      navigate("/admin/my-events");
+      navigate(PATHS.ADMIN_MY_EVENTS);
     } catch (err) {
       console.error("Error saving event:", err);
       setLoading(false); // hide loading if error
-      alert("Có lỗi xảy ra khi tạo sự kiện.");
+      const serverMsg = err?.response?.data?.message || err?.message || "Có lỗi xảy ra khi tạo sự kiện.";
+      alert(`Tạo sự kiện thất bại: ${serverMsg}`);
     }
   };
 

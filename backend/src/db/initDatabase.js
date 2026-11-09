@@ -98,6 +98,7 @@ const collections = {
       name: str(100),
       slug: str(100),
       is_active: bool,
+      default_commission_pct: { ...numN, minimum: 0, maximum: 50 },
     }),
     indexes: [[{ slug: 1 }, { unique: true }]],
   },

@@ -111,6 +111,54 @@ exports.cancelListing = async (req, res) => {
   }
 };
 
+// GET /v1/resale/listings (UC20)
+exports.getAllActiveListings = async (req, res) => {
+  try {
+    const listings = await ResaleListing.find({ status: "ACTIVE" })
+      .populate({
+        path: "ticket_id",
+        populate: [
+          { path: "event_id", select: "title banner_url venue_name city start_time" },
+          { path: "tier_id", select: "name price zone_color" },
+          { path: "seat_id", select: "section_name row_label seat_number" },
+          { path: "session_id", select: "name start_time end_time" },
+        ],
+      })
+      .populate("seller_id", "full_name username avatar_url")
+      .sort({ created_at: -1 });
+
+    const active = listings.filter((l) => l.ticket_id && l.ticket_id.event_id);
+    res.json({
+      success: true,
+      listings: active.map((l) => ({
+        id: l._id,
+        resalePrice: l.resale_price,
+        originalPrice: l.original_price,
+        event: {
+          id: l.ticket_id.event_id._id,
+          title: l.ticket_id.event_id.title,
+          bannerUrl: l.ticket_id.event_id.banner_url,
+          venueName: l.ticket_id.event_id.venue_name,
+          city: l.ticket_id.event_id.city,
+        },
+        tierName: l.ticket_id.tier_id?.name,
+        seat: l.ticket_id.seat_id
+          ? `${l.ticket_id.seat_id.section_name}-${l.ticket_id.seat_id.row_label}${l.ticket_id.seat_id.seat_number}`
+          : "Vé tự do (GA)",
+        seller: {
+          id: l.seller_id?._id,
+          name: l.seller_id?.full_name || l.seller_id?.username || "Người bán",
+          avatarUrl: l.seller_id?.avatar_url,
+        },
+        createdAt: l.created_at,
+      })),
+      total: active.length,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // GET /v1/resale/events/:eventId/listings (UC19)
 exports.getEventListings = async (req, res) => {
   try {

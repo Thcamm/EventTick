@@ -1,4 +1,4 @@
-const { Voucher, Event } = require("../models");
+const { Voucher, Event, Order } = require("../models");
 const { httpError, validId, ah, intIn, date } = require("../utils/http");
 const { audit } = require("../utils/audit");
 const { _helpers: H } = require("./organizerEventController");
@@ -12,22 +12,74 @@ async function ownVoucher(req, id) {
   return { voucher: v, event: e };
 }
 
-const toClient = (v) => ({
-  _id: v._id, eventId: v.event_id, code: v.code, discountType: v.discount_type, discountValue: v.discount_value,
-  maxDiscountAmount: v.max_discount_amount, minOrderAmount: v.min_order_amount, usageLimit: v.usage_limit,
-  usedCount: v.used_count, maxPerUser: v.max_per_user, validFrom: v.valid_from, validUntil: v.valid_until, isActive: v.is_active,
-});
+const toClient = (v, statsMap) => {
+  const st = statsMap?.get(String>(v._id)) || {
+    paidOrdersCount: 0,
+    totalDiscountGranted: 0,
+    grossOrderSubtotal: 0,
+    netRevenueGenerated: 0,
+  };
+  return {
+    _id: v._id, eventId: v.event_id, code: v.code, discountType: v.discount_type, discountValue: v.discount_value,
+    maxDiscountAmount: v.max_discount_amount, minOrderAmount: v.min_order_amount, usageLimit: v.usage_limit,
+    usedCount: v.used_count, maxPerUser: v.max_per_user, validFrom: v.valid_from, validUntil: v.valid_until, isActive: v.is_active,
+    stats: {
+      paidOrdersCount: st.paidOrdersCount,
+      totalDiscountGranted: st.totalDiscountGranted,
+      grossOrderSubtotal: st.grossOrderSubtotal,
+      netRevenueGenerated: st.netRevenueGenerated,
+      usageRatePct: v.usage_limit > 0 ? Math.round((v.used_count / v.usage_limit) * 10000) / 100 : 0,
+    },
+  };
+};
 
 function checkValue(type, value) {
   if (type === "PERCENT") return H.num(value, 0.01, 100, "discountValue (%)");
   return H.num(value, 1, 100_000_000, "discountValue (đ)");
 }
 
-// GET /v1/organizer/events/:eventId/vouchers
+// GET /v1/organizer/events/:eventId/vouchers (+ thống kê hiệu quả khuyến mãi)
 exports.list = ah(async (req, res) => {
   const event = await H.ownEvent(req, req.params.eventId);
-  const items = await Voucher.find({ event_id: event._id }).sort({ _id: -1 });
-  res.json({ success: true, items: items.map(toClient) });
+  const [items, agg] = await Promise.all([
+    Voucher.find({ event_id: event._id }).sort({ _id: -1 }),
+    Order.aggregate([
+      { $match: { event_id: event._id, status: "PAID", voucher_id: { $ne: null } } },
+      {
+        $group: {
+          _id: "$voucher_id",
+          paidOrdersCount: { $sum: 1 },
+          totalDiscountGranted: { $sum: { $ifNull: ["$discount_amount", 0] } },
+          grossOrderSubtotal: { $sum: { $ifNull: ["$subtotal", 0] } },
+          netRevenueGenerated: { $sum: { $ifNull: ["$total_amount", 0] } },
+        },
+      },
+    ]),
+  ]);
+
+  const statsMap = new Map(agg.map((r) => [String(r._id), r]));
+  const clientItems = items.map((v) => toClient(v, statsMap));
+  const summary = clientItems.reduce(
+    (acc, it) => {
+      acc.totalVouchers += 1;
+      if (it.isActive) acc.activeVouchers += 1;
+      acc.totalUsedCount += it.usedCount || 0;
+      acc.paidOrdersWithVoucher += it.stats.paidOrdersCount;
+      acc.totalDiscountGranted += it.stats.totalDiscountGranted;
+      acc.netRevenueGenerated += it.stats.netRevenueGenerated;
+      return acc;
+    },
+    {
+      totalVouchers: 0,
+      activeVouchers: 0,
+      totalUsedCount: 0,
+      paidOrdersWithVoucher: 0,
+      totalDiscountGranted: 0,
+      netRevenueGenerated: 0,
+    },
+  );
+
+  res.json({ success: true, summary, items: clientItems });
 });
 
 // POST /v1/organizer/events/:eventId/vouchers
