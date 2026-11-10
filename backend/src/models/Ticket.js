@@ -1,68 +1,27 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const { ref, options } = require('./_helpers');
 
-const ticketSchema = new Schema(
+const schema = new Schema(
   {
-    bookingId: {
-      type: Schema.Types.ObjectId,
-      ref: "Booking",
-      required: true,
-      index: true,
-    },
-    eventId: {
-      type: Schema.Types.ObjectId,
-      ref: "Event",
-      required: true,
-    },
-    sessionId: {
-      type: Schema.Types.ObjectId,
-      required: true,
-    },
-    zoneId: {
-      type: Schema.Types.ObjectId,
-      ref: "Zone",
-      required: true,
-    },
-    ownerId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-    ticketCode: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      uppercase: true,
-    },
-    unitPrice: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    attendeeName: { type: String, trim: true },
-    attendeeEmail: { type: String, trim: true, lowercase: true },
-    seatNumber: { type: String, trim: true },
+    order_id: ref('Order', { required: true }),
+    event_id: ref('Event', { required: true }),
+    session_id: ref('EventSession', { required: true }),
+    tier_id: ref('TicketTier', { required: true }),
+    seat_id: ref('Seat'),
+    owner_id: ref('User', { required: true }),
+    ticket_code: { type: String, required: true, uppercase: true, trim: true, maxlength: 50 },
+    qr_hash_signature: { type: String, required: true, maxlength: 255 },
     status: {
       type: String,
-      enum: ["UNUSED", "USED", "CANCELLED"],
-      default: "UNUSED",
+      enum: ['VALID', 'USED', 'LISTED_RESALE', 'RESOLD_INVALID', 'REFUNDED'],
+      default: 'VALID',
+      required: true,
     },
-    scannedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-    },
-    scannedAt: { type: Date },
+    checked_in_at: { type: Date },
+    checked_in_by: ref('User'),
   },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
-  },
+  options,
 );
 
-// Indexes for fast check-in scanning & customer history
-ticketSchema.index({ eventId: 1, status: 1 });
-
-module.exports = mongoose.model("Ticket", ticketSchema);
+module.exports = mongoose.model('Ticket', schema, 'tickets');
