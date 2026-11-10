@@ -12,50 +12,50 @@ const {
   PayoutSettlement,
   User,
   OrganizerProfile,
-} = require('../models');
-const { savePrivate } = require('../services/privateStorage');
-const { saveUploadedFile } = require('../utils/upload');
-const bookingService = require('../services/bookingService');
-const { sniff, resourceTypeOf } = require('../utils/fileType');
-const { httpError, validId, ah, str, intIn, date } = require('../utils/http');
-const { audit } = require('../utils/audit');
+} = require("../models");
+const { savePrivate } = require("../services/privateStorage");
+const { saveUploadedFile } = require("../utils/upload");
+const bookingService = require("../services/bookingService");
+const { sniff, resourceTypeOf } = require("../utils/fileType");
+const { httpError, validId, ah, str, intIn, date } = require("../utils/http");
+const { audit } = require("../utils/audit");
 
 const HOUR = 3600 * 1000;
-const SELLING = ['DRAFT', 'APPROVED', 'PUBLISHED']; // trạng thái cho phép chỉnh hạng vé / sơ đồ
+const SELLING = ["DRAFT", "APPROVED", "PUBLISHED"]; // trạng thái cho phép chỉnh hạng vé / sơ đồ
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
 const num = (v, min, max, label) => {
   const n = Number(v);
-  if (v === '' || v === null || v === undefined || !Number.isFinite(n) || n < min || n > max) {
+  if (v === "" || v === null || v === undefined || !Number.isFinite(n) || n < min || n > max) {
     throw httpError(`${label} phải là số từ ${min} đến ${max}`, 400);
   }
   return n;
 };
-const bool = (v) => v === true || v === 'true';
+const bool = (v) => v === true || v === "true";
 
 // ------------------------------------------------------------------ quyền sở hữu
 async function ownEvent(req, id) {
-  const e = await Event.findOne({ _id: validId(id, 'ID sự kiện'), organizer_id: req.user.id });
-  if (!e) throw httpError('Không tìm thấy sự kiện', 404);
+  const e = await Event.findOne({ _id: validId(id, "ID sự kiện"), organizer_id: req.user.id });
+  if (!e) throw httpError("Không tìm thấy sự kiện", 404);
   return e;
 }
 async function ownSession(req, id) {
-  const s = await EventSession.findById(validId(id, 'ID suất diễn'));
+  const s = await EventSession.findById(validId(id, "ID suất diễn"));
   const e = s && (await Event.findOne({ _id: s.event_id, organizer_id: req.user.id }));
-  if (!s || !e) throw httpError('Không tìm thấy suất diễn', 404);
+  if (!s || !e) throw httpError("Không tìm thấy suất diễn", 404);
   return { session: s, event: e };
 }
 async function ownTier(req, id) {
-  const t = await TicketTier.findById(validId(id, 'ID hạng vé'));
+  const t = await TicketTier.findById(validId(id, "ID hạng vé"));
   const e = t && (await Event.findOne({ _id: t.event_id, organizer_id: req.user.id }));
-  if (!t || !e) throw httpError('Không tìm thấy hạng vé', 404);
+  if (!t || !e) throw httpError("Không tìm thấy hạng vé", 404);
   return { tier: t, event: e };
 }
 const assertSelling = (event) => {
   if (!SELLING.includes(event.status)) {
     throw httpError(
-      event.status === 'PENDING'
-        ? 'Sự kiện đang chờ duyệt, hãy rút lại (POST /events/:id/withdraw) trước khi chỉnh sửa'
+      event.status === "PENDING"
+        ? "Sự kiện đang chờ duyệt, hãy rút lại (POST /events/:id/withdraw) trước khi chỉnh sửa"
         : `Không chỉnh sửa được khi sự kiện ở trạng thái ${event.status}`,
       409,
     );
@@ -69,15 +69,12 @@ function parseSession(raw, i = 0, { requireFuture = true } = {}) {
   const end = r.endTime ? date(r.endTime, `Suất ${i + 1}: thời gian kết thúc`) : new Date(start.getTime() + 3 * HOUR);
   if (end <= start) throw httpError(`Suất ${i + 1}: giờ kết thúc phải sau giờ bắt đầu`, 400);
   if (requireFuture && start <= new Date()) {
-    throw httpError(
-      `Suất ${i + 1}: thời gian bắt đầu (${start.toLocaleString('vi-VN')}) phải diễn ra trong tương lai`,
-      400,
-    );
+    throw httpError(`Suất ${i + 1}: thời gian bắt đầu (${start.toLocaleString("vi-VN")}) phải diễn ra trong tương lai`, 400);
   }
-  return { name: str(r.name || `Suất diễn ${i + 1}`, 255, 'tên suất'), start_time: start, end_time: end };
+  return { name: str(r.name || `Suất diễn ${i + 1}`, 255, "tên suất"), start_time: start, end_time: end };
 }
 
-function parseTier(raw, sessionStart, label = 'Hạng vé') {
+function parseTier(raw, sessionStart, label = "Hạng vé") {
   const r = raw || {};
   const total = intIn(r.totalQuantity ?? r.quantity ?? r.stock ?? r.totalCapacity, 1, 100000, `${label}: số lượng`);
   const min = intIn(r.minPerOrder ?? r.minOrder ?? 1, 1, 100, `${label}: tối thiểu mỗi đơn`);
@@ -85,14 +82,10 @@ function parseTier(raw, sessionStart, label = 'Hạng vé') {
   const max = intIn(rawMax !== undefined ? rawMax : Math.max(10, min), 1, 100, `${label}: tối đa mỗi đơn`);
   if (min > max) throw httpError(`${label}: số vé tối thiểu mỗi đơn (${min}) không được lớn hơn tối đa (${max})`, 400);
   const from = r.saleStartTime ? date(r.saleStartTime, `${label}: giờ mở bán`) : new Date();
-  const to = r.saleEndTime
-    ? date(r.saleEndTime, `${label}: giờ đóng bán`)
-    : sessionStart || new Date(from.getTime() + 7 * 24 * HOUR);
+  const to = r.saleEndTime ? date(r.saleEndTime, `${label}: giờ đóng bán`) : (sessionStart || new Date(from.getTime() + 7 * 24 * HOUR));
   let safeTo = to;
   if (to <= from) {
-    console.warn(
-      `⚠️ [parseTier] ${label}: giờ đóng bán (${to.toISOString()}) <= giờ mở bán (${from.toISOString()}), tự động điều chỉnh đóng bán sau mở bán 1 giờ`,
-    );
+    console.warn(`⚠️ [parseTier] ${label}: giờ đóng bán (${to.toISOString()}) <= giờ mở bán (${from.toISOString()}), tự động điều chỉnh đóng bán sau mở bán 1 giờ`);
     safeTo = new Date(from.getTime() + HOUR);
   }
   if (r.zoneColor && !COLOR.test(r.zoneColor)) throw httpError(`${label}: zoneColor phải dạng #RRGGBB`, 400);
@@ -106,29 +99,26 @@ function parseTier(raw, sessionStart, label = 'Hạng vé') {
     sale_start_time: from,
     sale_end_time: safeTo,
     zone_color: r.zoneColor || undefined,
-    description: str(r.description ?? r.desc, 500, `${label}: mô tả`, { required: false }) || '',
+    description: str(r.description ?? r.desc, 500, `${label}: mô tả`, { required: false }) || "",
   };
 }
 
 function parseForm(schema) {
   if (schema === null || schema === undefined) return null;
   const list = Array.isArray(schema) ? schema : [];
-  if (list.length > 20) throw httpError('Form tùy chỉnh tối đa 20 câu hỏi', 400);
+  if (list.length > 20) throw httpError("Form tùy chỉnh tối đa 20 câu hỏi", 400);
   const keys = new Set();
   return list.map((f, i) => {
-    const key = String(f?.key || f?.fieldName || '');
-    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(key))
-      throw httpError(`Câu hỏi ${i + 1}: key phải bắt đầu bằng chữ, chỉ gồm chữ/số/_ (tối đa 40)`, 400);
+    const key = String(f?.key || f?.fieldName || "");
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(key)) throw httpError(`Câu hỏi ${i + 1}: key phải bắt đầu bằng chữ, chỉ gồm chữ/số/_ (tối đa 40)`, 400);
     if (keys.has(key)) throw httpError(`Câu hỏi ${i + 1}: key "${key}" bị trùng`, 400);
     keys.add(key);
-    const type = String(f?.type || f?.fieldType || 'text');
-    if (!['text', 'textarea', 'select', 'checkbox', 'number'].includes(type))
-      throw httpError(`Câu hỏi ${i + 1}: type không hợp lệ`, 400);
+    const type = String(f?.type || f?.fieldType || "text");
+    if (!["text", "textarea", "select", "checkbox", "number"].includes(type)) throw httpError(`Câu hỏi ${i + 1}: type không hợp lệ`, 400);
     const required = f?.required !== undefined ? bool(f.required) : bool(f?.isRequired);
     const out = { key, label: str(f.label, 200, `Câu hỏi ${i + 1}: nhãn`), type, required };
-    if (type === 'select') {
-      if (!Array.isArray(f.options) || f.options.length < 2 || f.options.length > 20)
-        throw httpError(`Câu hỏi ${i + 1}: select cần 2–20 lựa chọn`, 400);
+    if (type === "select") {
+      if (!Array.isArray(f.options) || f.options.length < 2 || f.options.length > 20) throw httpError(`Câu hỏi ${i + 1}: select cần 2–20 lựa chọn`, 400);
       out.options = f.options.map((o) => str(o, 100, `Câu hỏi ${i + 1}: lựa chọn`));
     }
     return out;
@@ -137,15 +127,15 @@ function parseForm(schema) {
 
 async function findCategory(name) {
   if (!name) {
-    const fallback = (await Category.findOne({ slug: 'khac' })) || (await Category.findOne());
+    const fallback = await Category.findOne({ slug: "khac" }) || await Category.findOne();
     return fallback;
   }
   let c = await Category.findOne({ $or: [{ name }, { slug: name }] });
   if (!c) {
-    c = await Category.findOne({ name: new RegExp(`^${name.trim()}$`, 'i') });
+    c = await Category.findOne({ name: new RegExp(`^${name.trim()}$`, "i") });
   }
   if (!c) {
-    c = (await Category.findOne({ slug: 'khac' })) || (await Category.findOne());
+    c = (await Category.findOne({ slug: "khac" })) || (await Category.findOne());
   }
   if (!c) throw httpError(`Không tìm thấy danh mục phù hợp cho "${name}"`, 400);
   return c;
@@ -153,14 +143,8 @@ async function findCategory(name) {
 
 /** Cập nhật các trường tổng hợp của sự kiện sau khi đổi suất / hạng vé. */
 async function recalcEvent(eventId) {
-  const [sessions, tiers] = await Promise.all([
-    EventSession.find({ event_id: eventId }),
-    TicketTier.find({ event_id: eventId }),
-  ]);
-  const upd = {
-    lowest_price: tiers.length ? Math.min(...tiers.map((t) => t.price)) : 0,
-    has_seat_map: tiers.some((t) => t.zone_type === 'SEATED'),
-  };
+  const [sessions, tiers] = await Promise.all([EventSession.find({ event_id: eventId }), TicketTier.find({ event_id: eventId })]);
+  const upd = { lowest_price: tiers.length ? Math.min(...tiers.map((t) => t.price)) : 0, has_seat_map: tiers.some((t) => t.zone_type === "SEATED") };
   if (sessions.length) {
     upd.start_time = new Date(Math.min(...sessions.map((s) => s.start_time)));
     upd.end_time = new Date(Math.max(...sessions.map((s) => s.end_time)));
@@ -173,21 +157,10 @@ const usedOf = (t) => t.total_quantity - t.available_quantity; // đã bán + đ
 function tierToClient(t) {
   const o = t.toObject ? t.toObject() : t;
   return {
-    _id: o._id,
-    sessionId: o.session_id,
-    name: o.name,
-    price: o.price,
-    totalQuantity: o.total_quantity,
-    availableQuantity: o.available_quantity,
-    used: usedOf(o),
-    minPerOrder: o.min_per_order,
-    maxPerOrder: o.max_per_order,
-    saleStartTime: o.sale_start_time,
-    saleEndTime: o.sale_end_time,
-    zoneColor: o.zone_color,
-    zoneType: o.zone_type || 'GA',
-    zoneShape: o.zone_shape,
-    description: o.description,
+    _id: o._id, sessionId: o.session_id, name: o.name, price: o.price, totalQuantity: o.total_quantity,
+    availableQuantity: o.available_quantity, used: usedOf(o), minPerOrder: o.min_per_order, maxPerOrder: o.max_per_order,
+    saleStartTime: o.sale_start_time, saleEndTime: o.sale_end_time, zoneColor: o.zone_color, zoneType: o.zone_type || "GA",
+    zoneShape: o.zone_shape, description: o.description,
   };
 }
 
@@ -195,42 +168,38 @@ function tierToClient(t) {
 // POST /v1/events (multipart: data = JSON, backgroundImage, eventImage)
 exports.create = ah(async (req, res) => {
   console.log(`\n================================================================`);
-  console.log(
-    `🚀 [Tạo sự kiện] Nhận request POST /v1/events từ User: ${req.user?.username || req.user?.id || 'Ẩn danh'}`,
-  );
+  console.log(`🚀 [Tạo sự kiện] Nhận request POST /v1/events từ User: ${req.user?.username || req.user?.id || "Ẩn danh"}`);
 
   let payload;
   try {
-    payload = JSON.parse(req.body?.data || '{}');
+    payload = JSON.parse(req.body?.data || "{}");
   } catch (parseErr) {
-    console.error('❌ [Tạo sự kiện] Lỗi parse JSON trường data:', parseErr.message);
-    throw httpError('Trường data không phải JSON hợp lệ', 400);
+    console.error("❌ [Tạo sự kiện] Lỗi parse JSON trường data:", parseErr.message);
+    throw httpError("Trường data không phải JSON hợp lệ", 400);
   }
 
   const files = Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat();
-  const bgFile = files.find((f) => f.fieldname === 'backgroundImage');
-  const thumbFile = files.find((f) => f.fieldname === 'eventImage');
+  const bgFile = files.find((f) => f.fieldname === "backgroundImage");
+  const thumbFile = files.find((f) => f.fieldname === "eventImage");
 
-  console.log(
-    `📝 [Tạo sự kiện] Tên: "${payload.title || payload.eventName || '(chưa đặt tên)'}" | Danh mục: "${payload.category || '(mặc định)'}" | Số suất diễn: ${payload.sessions?.length || 0} | File ảnh tải lên: ${files.length}`,
-  );
+  console.log(`📝 [Tạo sự kiện] Tên: "${payload.title || payload.eventName || "(chưa đặt tên)"}" | Danh mục: "${payload.category || "(mặc định)"}" | Số suất diễn: ${payload.sessions?.length || 0} | File ảnh tải lên: ${files.length}`);
 
   for (const f of [bgFile, thumbFile].filter(Boolean)) {
     const fileKind = sniff(f.buffer);
-    if (!['jpeg', 'png', 'webp'].includes(fileKind)) {
+    if (!["jpeg", "png", "webp"].includes(fileKind)) {
       console.error(`❌ [Tạo sự kiện] File "${f.originalname}" không đúng định dạng: ${fileKind}`);
       throw httpError(`Ảnh "${f.originalname}" phải là định dạng JPG, PNG hoặc WEBP`, 400);
     }
   }
 
   const draft = bool(payload.saveAsDraft);
-  const title = str(payload.title || payload.eventName, 255, 'tên sự kiện');
-  const category = await findCategory(payload.category || 'Khác');
+  const title = str(payload.title || payload.eventName, 255, "tên sự kiện");
+  const category = await findCategory(payload.category || "Khác");
   console.log(`📂 [Tạo sự kiện] Khớp danh mục DB: "${category.name}" (ID: ${category._id})`);
 
   const rawSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
-  if (!rawSessions.length) throw httpError('Cần ít nhất 1 suất diễn', 400);
-  if (rawSessions.length > 30) throw httpError('Tối đa 30 suất diễn', 400);
+  if (!rawSessions.length) throw httpError("Cần ít nhất 1 suất diễn", 400);
+  if (rawSessions.length > 30) throw httpError("Tối đa 30 suất diễn", 400);
   const sessionDefs = rawSessions.map((s, i) => parseSession(s, i, { requireFuture: !draft }));
   const tierLists = rawSessions.map((s, i) => {
     const list = s.tickets || s.zones || [];
@@ -238,19 +207,19 @@ exports.create = ah(async (req, res) => {
     return list.map((t, j) => parseTier(t, sessionDefs[i].start_time, `Suất ${i + 1}, hạng vé ${j + 1}`));
   });
 
-  const venue = str(payload.venueName || payload.location || payload.eventAddress, 255, 'địa điểm');
-  const city = str(payload.city || (venue ? venue.split(',').pop().trim() : '') || 'Toàn quốc', 100, 'thành phố');
+  const venue = str(payload.venueName || payload.location || payload.eventAddress, 255, "địa điểm");
+  const city = str(payload.city || (venue ? venue.split(",").pop().trim() : "") || "Toàn quốc", 100, "thành phố");
   const form = parseForm(payload.customFormSchema);
-  const markup = num(payload.maxResaleMarkupPct ?? 0, 0, 100, 'maxResaleMarkupPct');
+  const markup = num(payload.maxResaleMarkupPct ?? 0, 0, 100, "maxResaleMarkupPct");
 
-  let bannerUrl = payload.backgroundImage || payload.bannerUrl || 'https://picsum.photos/seed/default/800/450';
+  let bannerUrl = payload.backgroundImage || payload.bannerUrl || "https://picsum.photos/seed/default/800/450";
   let thumbUrl = payload.eventImage || payload.thumbnailUrl;
   try {
     if (bgFile) bannerUrl = await saveUploadedFile(req, bgFile);
     if (thumbFile) thumbUrl = await saveUploadedFile(req, thumbFile);
   } catch (e) {
-    console.error('❌ [Tạo sự kiện] Upload ảnh lỗi:', e.message || e);
-    throw httpError('Không tải được ảnh lên (hãy thử lại hoặc kiểm tra ảnh)', 502);
+    console.error("❌ [Tạo sự kiện] Upload ảnh lỗi:", e.message || e);
+    throw httpError("Không tải được ảnh lên (hãy thử lại hoặc kiểm tra ảnh)", 502);
   }
 
   const created = { event: null };
@@ -259,7 +228,7 @@ exports.create = ah(async (req, res) => {
       organizer_id: req.user.id,
       category_id: category._id,
       title,
-      description: String(payload.description || payload.eventDesc || '').slice(0, 20000),
+      description: String(payload.description || payload.eventDesc || "").slice(0, 20000),
       banner_url: bannerUrl,
       thumbnail_url: thumbUrl || bannerUrl,
       venue_name: venue,
@@ -270,16 +239,14 @@ exports.create = ah(async (req, res) => {
       max_resale_markup_pct: markup,
       custom_form_schema: form || undefined,
       organizer_name: payload.organizerName || req.user.username,
-      organizer_info: payload.organizerInfo || '',
-      event_type: payload.eventType === 'online' ? 'online' : 'offline',
-      status: draft ? 'DRAFT' : 'PENDING',
+      organizer_info: payload.organizerInfo || "",
+      event_type: payload.eventType === "online" ? "online" : "offline",
+      status: draft ? "DRAFT" : "PENDING",
     });
     created.event = event;
 
     const sessions = await EventSession.insertMany(sessionDefs.map((s) => ({ ...s, event_id: event._id })));
-    const tiers = tierLists.flatMap((list, i) =>
-      list.map((t) => ({ ...t, event_id: event._id, session_id: sessions[i]._id })),
-    );
+    const tiers = tierLists.flatMap((list, i) => list.map((t) => ({ ...t, event_id: event._id, session_id: sessions[i]._id })));
     if (tiers.length) await TicketTier.insertMany(tiers);
     await recalcEvent(event._id);
 
@@ -297,21 +264,19 @@ exports.create = ah(async (req, res) => {
               bank_branch: branch,
             },
           },
-          { upsert: false },
-        ).catch((e) => console.warn('⚠️ Lưu paymentInfo organizer thất bại:', e.message));
+          { upsert: false }
+        ).catch((e) => console.warn("⚠️ Lưu paymentInfo organizer thất bại:", e.message));
       }
     }
 
-    await audit(req, draft ? 'EVENT_CREATE_DRAFT' : 'EVENT_CREATE', 'events', event._id);
+    await audit(req, draft ? "EVENT_CREATE_DRAFT" : "EVENT_CREATE", "events", event._id);
 
-    console.log(
-      `✅ [Tạo sự kiện THÀNH CÔNG] Event ID: ${event._id} | Tiêu đề: "${event.title}" | Trạng thái: ${event.status}`,
-    );
+    console.log(`✅ [Tạo sự kiện THÀNH CÔNG] Event ID: ${event._id} | Tiêu đề: "${event.title}" | Trạng thái: ${event.status}`);
     console.log(`================================================================\n`);
 
     res.status(201).json({
       success: true,
-      message: draft ? 'Đã lưu bản nháp.' : 'Tạo sự kiện thành công! Sự kiện đang chờ Admin phê duyệt.',
+      message: draft ? "Đã lưu bản nháp." : "Tạo sự kiện thành công! Sự kiện đang chờ Admin phê duyệt.",
       eventId: event._id,
       status: event.status,
     });
@@ -329,9 +294,8 @@ exports.create = ah(async (req, res) => {
 
 // GET /v1/organizer/events
 exports.list = ah(async (req, res) => {
-  const events = await Event.find({ organizer_id: req.user.id })
-    .sort({ _id: -1 })
-    .select('title status start_time end_time venue_name city banner_url rejection_reason lowest_price has_seat_map');
+  const events = await Event.find({ organizer_id: req.user.id }).sort({ _id: -1 })
+    .select("title status start_time end_time venue_name city banner_url rejection_reason lowest_price has_seat_map");
   res.json({ success: true, events });
 });
 
@@ -341,111 +305,80 @@ exports.detail = ah(async (req, res) => {
   const [sessions, tiers, contract, vouchers] = await Promise.all([
     EventSession.find({ event_id: e._id }).sort({ start_time: 1 }),
     TicketTier.find({ event_id: e._id }).sort({ price: 1 }),
-    EContract.findOne({ event_id: e._id }).select('status commission_rate_pct signed_at'),
+    EContract.findOne({ event_id: e._id }).select("status commission_rate_pct signed_at"),
     Voucher.countDocuments({ event_id: e._id }),
   ]);
   const o = e.toObject();
   res.json({
     success: true,
     event: {
-      _id: o._id,
-      title: o.title,
-      description: o.description,
-      organizerInfo: o.organizer_info,
-      venueName: o.venue_name,
-      city: o.city,
-      bannerUrl: o.banner_url,
-      thumbnailUrl: o.thumbnail_url,
-      status: o.status,
-      rejectionReason: o.rejection_reason,
-      startTime: o.start_time,
-      endTime: o.end_time,
-      hasSeatMap: o.has_seat_map,
-      hasLegalDoc: Boolean(o.legal_doc_url),
-      allowResale: o.allow_resale,
-      maxResaleMarkupPct: o.max_resale_markup_pct,
+      _id: o._id, title: o.title, description: o.description, organizerInfo: o.organizer_info, venueName: o.venue_name, city: o.city,
+      bannerUrl: o.banner_url, thumbnailUrl: o.thumbnail_url, status: o.status, rejectionReason: o.rejection_reason,
+      startTime: o.start_time, endTime: o.end_time, hasSeatMap: o.has_seat_map, hasLegalDoc: Boolean(o.legal_doc_url),
+      allowResale: o.allow_resale, maxResaleMarkupPct: o.max_resale_markup_pct,
       customFormSchema: o.custom_form_schema || [],
       sessions: sessions.map((s) => ({
-        _id: s._id,
-        name: s.name,
-        startTime: s.start_time,
-        endTime: s.end_time,
-        status: s.status,
-        seatMap: s.seat_map,
+        _id: s._id, name: s.name, startTime: s.start_time, endTime: s.end_time, status: s.status, seatMap: s.seat_map,
         tiers: tiers.filter((t) => t.session_id.equals(s._id)).map(tierToClient),
       })),
-      contract: contract
-        ? { status: contract.status, commissionRatePct: contract.commission_rate_pct, signedAt: contract.signed_at }
-        : null,
+      contract: contract ? { status: contract.status, commissionRatePct: contract.commission_rate_pct, signedAt: contract.signed_at } : null,
       voucherCount: vouchers,
     },
   });
 });
 
 // ------------------------------------------------------------------ UC23: sửa / rút / huỷ
-const STRUCTURAL = [
-  'title',
-  'venueName',
-  'city',
-  'category',
-  'allowResale',
-  'maxResaleMarkupPct',
-  'customFormSchema',
-  'eventType',
-];
+const STRUCTURAL = ["title", "venueName", "city", "category", "allowResale", "maxResaleMarkupPct", "customFormSchema", "eventType"];
 
 // PUT /v1/organizer/events/:id
 exports.update = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  if (['CANCELLED', 'ENDED'].includes(e.status))
-    throw httpError(`Sự kiện đã ${e.status === 'ENDED' ? 'kết thúc' : 'bị huỷ'}, không thể sửa`, 409);
+  if (["CANCELLED", "ENDED"].includes(e.status)) throw httpError(`Sự kiện đã ${e.status === "ENDED" ? "kết thúc" : "bị huỷ"}, không thể sửa`, 409);
   const b = req.body || {};
   const touchesStructure = STRUCTURAL.some((k) => b[k] !== undefined);
-  if (touchesStructure && e.status !== 'DRAFT') {
+  if (touchesStructure && e.status !== "DRAFT") {
     throw httpError(
-      e.status === 'PENDING'
-        ? 'Sự kiện đang chờ duyệt. Hãy rút lại (POST /events/:id/withdraw) rồi sửa.'
-        : 'Sự kiện đã được duyệt, chỉ sửa được mô tả và thông tin tổ chức (tiêu đề, địa điểm, chính sách đã nằm trong hợp đồng).',
+      e.status === "PENDING"
+        ? "Sự kiện đang chờ duyệt. Hãy rút lại (POST /events/:id/withdraw) rồi sửa."
+        : "Sự kiện đã được duyệt, chỉ sửa được mô tả và thông tin tổ chức (tiêu đề, địa điểm, chính sách đã nằm trong hợp đồng).",
       409,
     );
   }
   const set = {};
   if (b.description !== undefined) set.description = String(b.description).slice(0, 20000);
   if (b.organizerInfo !== undefined) set.organizer_info = String(b.organizerInfo).slice(0, 5000);
-  if (b.title !== undefined) set.title = str(b.title, 255, 'tên sự kiện');
-  if (b.venueName !== undefined) set.venue_name = str(b.venueName, 255, 'địa điểm');
-  if (b.city !== undefined) set.city = str(b.city, 100, 'thành phố');
+  if (b.title !== undefined) set.title = str(b.title, 255, "tên sự kiện");
+  if (b.venueName !== undefined) set.venue_name = str(b.venueName, 255, "địa điểm");
+  if (b.city !== undefined) set.city = str(b.city, 100, "thành phố");
   if (b.category !== undefined) set.category_id = (await findCategory(String(b.category)))._id;
   if (b.allowResale !== undefined) set.allow_resale = bool(b.allowResale);
-  if (b.maxResaleMarkupPct !== undefined)
-    set.max_resale_markup_pct = num(b.maxResaleMarkupPct, 0, 100, 'maxResaleMarkupPct');
-  if (b.eventType !== undefined) set.event_type = b.eventType === 'online' ? 'online' : 'offline';
+  if (b.maxResaleMarkupPct !== undefined) set.max_resale_markup_pct = num(b.maxResaleMarkupPct, 0, 100, "maxResaleMarkupPct");
+  if (b.eventType !== undefined) set.event_type = b.eventType === "online" ? "online" : "offline";
   if (b.customFormSchema !== undefined) set.custom_form_schema = parseForm(b.customFormSchema) || [];
-  if (!Object.keys(set).length) throw httpError('Không có trường nào để cập nhật', 400);
+  if (!Object.keys(set).length) throw httpError("Không có trường nào để cập nhật", 400);
 
   const updated = await Event.findOneAndUpdate({ _id: e._id, status: e.status }, { $set: set }, { new: true });
-  if (!updated) throw httpError('Trạng thái sự kiện vừa thay đổi, hãy tải lại', 409);
-  await audit(req, 'EVENT_UPDATE', 'events', e._id, { fields: Object.keys(set) });
-  res.json({ success: true, message: 'Đã cập nhật sự kiện', status: updated.status });
+  if (!updated) throw httpError("Trạng thái sự kiện vừa thay đổi, hãy tải lại", 409);
+  await audit(req, "EVENT_UPDATE", "events", e._id, { fields: Object.keys(set) });
+  res.json({ success: true, message: "Đã cập nhật sự kiện", status: updated.status });
 });
 
 // PUT /v1/organizer/events/:id/images (multipart: backgroundImage, eventImage)
 exports.images = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  if (['CANCELLED', 'ENDED'].includes(e.status)) throw httpError('Sự kiện đã kết thúc hoặc bị huỷ', 409);
+  if (["CANCELLED", "ENDED"].includes(e.status)) throw httpError("Sự kiện đã kết thúc hoặc bị huỷ", 409);
   const files = req.files || [];
-  const bg = files.find((f) => f.fieldname === 'backgroundImage');
-  const th = files.find((f) => f.fieldname === 'eventImage');
-  if (!bg && !th) throw httpError('Thiếu ảnh (backgroundImage hoặc eventImage)', 400);
-  for (const f of [bg, th].filter(Boolean))
-    if (!['jpeg', 'png', 'webp'].includes(sniff(f.buffer))) throw httpError('Ảnh phải là JPG, PNG hoặc WEBP', 400);
+  const bg = files.find((f) => f.fieldname === "backgroundImage");
+  const th = files.find((f) => f.fieldname === "eventImage");
+  if (!bg && !th) throw httpError("Thiếu ảnh (backgroundImage hoặc eventImage)", 400);
+  for (const f of [bg, th].filter(Boolean)) if (!["jpeg", "png", "webp"].includes(sniff(f.buffer))) throw httpError("Ảnh phải là JPG, PNG hoặc WEBP", 400);
   const set = {};
   try {
     if (bg) set.banner_url = await saveUploadedFile(req, bg);
     if (th) set.thumbnail_url = await saveUploadedFile(req, th);
   } catch (err) {
-    console.error('Upload ảnh lỗi:', err.message || err);
-    throw httpError('Không tải được ảnh lên (kiểm tra cấu hình Cloudinary trong .env)', 502);
+    console.error("Upload ảnh lỗi:", err.message || err);
+    throw httpError("Không tải được ảnh lên (kiểm tra cấu hình Cloudinary trong .env)", 502);
   }
   await Event.updateOne({ _id: e._id }, { $set: set });
   res.json({ success: true, bannerUrl: set.banner_url, thumbnailUrl: set.thumbnail_url });
@@ -454,76 +387,60 @@ exports.images = ah(async (req, res) => {
 // PUT /v1/organizer/events/:id/legal-doc (multipart: document) — giấy phép biểu diễn, lưu riêng tư
 exports.legalDoc = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  if (!['DRAFT', 'PENDING'].includes(e.status))
-    throw httpError('Chỉ nộp / thay giấy phép khi sự kiện ở DRAFT hoặc PENDING', 409);
-  if (!req.file) throw httpError('Thiếu tệp giấy phép (field document)', 400);
+  if (!["DRAFT", "PENDING"].includes(e.status)) throw httpError("Chỉ nộp / thay giấy phép khi sự kiện ở DRAFT hoặc PENDING", 409);
+  if (!req.file) throw httpError("Thiếu tệp giấy phép (field document)", 400);
   const kind = sniff(req.file.buffer);
-  if (!['jpeg', 'png', 'webp', 'pdf'].includes(kind))
-    throw httpError('Giấy phép phải là ảnh JPG/PNG/WEBP hoặc PDF', 400);
+  if (!["jpeg", "png", "webp", "pdf"].includes(kind)) throw httpError("Giấy phép phải là ảnh JPG/PNG/WEBP hoặc PDF", 400);
   let ref;
   try {
-    ref = await savePrivate(req.file.buffer, {
-      filename: req.file.originalname,
-      folder: 'eventtick_legal',
-      resourceType: resourceTypeOf(kind),
-    });
+    ref = await savePrivate(req.file.buffer, { filename: req.file.originalname, folder: "eventtick_legal", resourceType: resourceTypeOf(kind) });
   } catch (err) {
-    console.error('Upload giấy phép lỗi:', err.message || err);
-    throw httpError('Không lưu được tệp (kiểm tra cấu hình Cloudinary trong .env)', 502);
+    console.error("Upload giấy phép lỗi:", err.message || err);
+    throw httpError("Không lưu được tệp (kiểm tra cấu hình Cloudinary trong .env)", 502);
   }
   await Event.updateOne({ _id: e._id }, { $set: { legal_doc_url: ref } });
-  await audit(req, 'EVENT_LEGAL_DOC_UPLOAD', 'events', e._id);
-  res.json({ success: true, message: 'Đã lưu giấy phép', hasLegalDoc: true });
+  await audit(req, "EVENT_LEGAL_DOC_UPLOAD", "events", e._id);
+  res.json({ success: true, message: "Đã lưu giấy phép", hasLegalDoc: true });
 });
 
 // POST /v1/organizer/events/:id/submit — DRAFT -> PENDING (gửi Admin duyệt)
 exports.submit = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  if (e.status !== 'DRAFT') throw httpError(`Chỉ gửi duyệt được sự kiện DRAFT (hiện: ${e.status})`, 409);
-  const [sessions, tiers] = await Promise.all([
-    EventSession.find({ event_id: e._id }),
-    TicketTier.find({ event_id: e._id }),
-  ]);
-  if (!sessions.length) throw httpError('Cần ít nhất 1 suất diễn', 400);
+  if (e.status !== "DRAFT") throw httpError(`Chỉ gửi duyệt được sự kiện DRAFT (hiện: ${e.status})`, 409);
+  const [sessions, tiers] = await Promise.all([EventSession.find({ event_id: e._id }), TicketTier.find({ event_id: e._id })]);
+  if (!sessions.length) throw httpError("Cần ít nhất 1 suất diễn", 400);
   for (const s of sessions) {
     if (s.start_time <= new Date()) throw httpError(`Suất "${s.name}" đã qua, hãy sửa giờ hoặc xoá suất`, 400);
     if (!tiers.some((t) => t.session_id.equals(s._id))) throw httpError(`Suất "${s.name}" chưa có hạng vé nào`, 400);
   }
-  const claimed = await Event.findOneAndUpdate(
-    { _id: e._id, status: 'DRAFT' },
-    { status: 'PENDING', $unset: { rejection_reason: 1 } },
-    { new: true },
-  );
-  if (!claimed) throw httpError('Trạng thái sự kiện vừa thay đổi', 409);
-  await audit(req, 'EVENT_SUBMIT', 'events', e._id);
-  res.json({ success: true, message: 'Đã gửi Admin duyệt', status: claimed.status });
+  const claimed = await Event.findOneAndUpdate({ _id: e._id, status: "DRAFT" }, { status: "PENDING", $unset: { rejection_reason: 1 } }, { new: true });
+  if (!claimed) throw httpError("Trạng thái sự kiện vừa thay đổi", 409);
+  await audit(req, "EVENT_SUBMIT", "events", e._id);
+  res.json({ success: true, message: "Đã gửi Admin duyệt", status: claimed.status });
 });
 
 // POST /v1/organizer/events/:id/withdraw — PENDING -> DRAFT (rút lại để chỉnh sửa)
 exports.withdraw = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  const claimed = await Event.findOneAndUpdate({ _id: e._id, status: 'PENDING' }, { status: 'DRAFT' }, { new: true });
+  const claimed = await Event.findOneAndUpdate({ _id: e._id, status: "PENDING" }, { status: "DRAFT" }, { new: true });
   if (!claimed) throw httpError(`Chỉ rút lại được sự kiện đang chờ duyệt (hiện: ${e.status})`, 409);
-  await audit(req, 'EVENT_WITHDRAW', 'events', e._id);
-  res.json({ success: true, message: 'Đã rút lại, sự kiện trở về bản nháp', status: claimed.status });
+  await audit(req, "EVENT_WITHDRAW", "events", e._id);
+  res.json({ success: true, message: "Đã rút lại, sự kiện trở về bản nháp", status: claimed.status });
 });
 
 // POST /v1/organizer/events/:id/cancel — UC23: huỷ sự kiện & tự động kích hoạt hoàn tiền hàng loạt (UC43) nếu đã có đơn PAID
 exports.cancel = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  if (['CANCELLED', 'ENDED'].includes(e.status)) throw httpError(`Sự kiện đã ở trạng thái ${e.status}`, 409);
-  const reason = str(req.body?.reason) || 'Ban tổ chức hủy sự kiện';
-  const paid = await Order.countDocuments({ event_id: e._id, status: 'PAID' });
+  if (["CANCELLED", "ENDED"].includes(e.status)) throw httpError(`Sự kiện đã ở trạng thái ${e.status}`, 409);
+  const reason = str(req.body?.reason) || "Ban tổ chức hủy sự kiện";
+  const paid = await Order.countDocuments({ event_id: e._id, status: "PAID" });
 
   if (paid > 0) {
     if (req.body?.autoRefund === false) {
-      throw httpError(
-        `Sự kiện đã có ${paid} đơn đã thanh toán. Bỏ cờ autoRefund=false hoặc liên hệ Admin để hoàn tiền hàng loạt (UC43).`,
-        409,
-      );
+      throw httpError(`Sự kiện đã có ${paid} đơn đã thanh toán. Bỏ cờ autoRefund=false hoặc liên hệ Admin để hoàn tiền hàng loạt (UC43).`, 409);
     }
     const bulkResult = await bookingService.bulkRefundAndCancelEvent(e._id, reason);
-    await audit(req, 'EVENT_CANCEL_WITH_BULK_REFUND', 'events', e._id, {
+    await audit(req, "EVENT_CANCEL_WITH_BULK_REFUND", "events", e._id, {
       refundedOrdersCount: bulkResult.refundedOrdersCount,
       totalRefundAmount: bulkResult.totalRefundAmount,
       releasedPendingOrders: bulkResult.releasedPendingOrders,
@@ -532,7 +449,7 @@ exports.cancel = ah(async (req, res) => {
     return res.json({
       success: true,
       message: `Đã hủy sự kiện và hoàn tiền hàng loạt cho ${bulkResult.refundedOrdersCount} đơn hàng`,
-      status: 'CANCELLED',
+      status: "CANCELLED",
       releasedOrders: bulkResult.releasedPendingOrders,
       refundedCount: bulkResult.refundedOrdersCount,
       totalRefundAmount: bulkResult.totalRefundAmount,
@@ -540,31 +457,20 @@ exports.cancel = ah(async (req, res) => {
     });
   }
 
-  const claimed = await Event.findOneAndUpdate(
-    { _id: e._id, status: { $in: ['DRAFT', 'PENDING', 'APPROVED', 'PUBLISHED'] } },
-    { status: 'CANCELLED' },
-    { new: true },
-  );
-  if (!claimed) throw httpError('Trạng thái sự kiện vừa thay đổi', 409);
+  const claimed = await Event.findOneAndUpdate({ _id: e._id, status: { $in: ["DRAFT", "PENDING", "APPROVED", "PUBLISHED"] } }, { status: "CANCELLED" }, { new: true });
+  if (!claimed) throw httpError("Trạng thái sự kiện vừa thay đổi", 409);
   const released = await bookingService.cancelPendingOrdersOfEvent(e._id);
-  await EventSession.updateMany({ event_id: e._id }, { status: 'CANCELLED' });
-  await EContract.updateOne({ event_id: e._id, status: 'WAITING_SIGN' }, { status: 'REJECTED' });
-  await audit(req, 'EVENT_CANCEL', 'events', e._id, { releasedOrders: released, reason });
-  res.json({
-    success: true,
-    message: 'Đã huỷ sự kiện',
-    status: 'CANCELLED',
-    releasedOrders: released,
-    refundedCount: 0,
-  });
+  await EventSession.updateMany({ event_id: e._id }, { status: "CANCELLED" });
+  await EContract.updateOne({ event_id: e._id, status: "WAITING_SIGN" }, { status: "REJECTED" });
+  await audit(req, "EVENT_CANCEL", "events", e._id, { releasedOrders: released, reason });
+  res.json({ success: true, message: "Đã huỷ sự kiện", status: "CANCELLED", releasedOrders: released, refundedCount: 0 });
 });
 
 // ------------------------------------------------------------------ suất diễn (chỉ khi DRAFT)
 exports.addSession = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  if (e.status !== 'DRAFT')
-    throw httpError('Chỉ thêm / sửa / xoá suất diễn khi sự kiện ở DRAFT (suất diễn nằm trong hợp đồng)', 409);
-  if ((await EventSession.countDocuments({ event_id: e._id })) >= 30) throw httpError('Tối đa 30 suất diễn', 400);
+  if (e.status !== "DRAFT") throw httpError("Chỉ thêm / sửa / xoá suất diễn khi sự kiện ở DRAFT (suất diễn nằm trong hợp đồng)", 409);
+  if ((await EventSession.countDocuments({ event_id: e._id })) >= 30) throw httpError("Tối đa 30 suất diễn", 400);
   const s = await EventSession.create({ ...parseSession(req.body, 0), event_id: e._id });
   await recalcEvent(e._id);
   res.status(201).json({ success: true, sessionId: s._id });
@@ -572,47 +478,40 @@ exports.addSession = ah(async (req, res) => {
 
 exports.updateSession = ah(async (req, res) => {
   const { session, event } = await ownSession(req, req.params.sessionId);
-  if (event.status !== 'DRAFT') throw httpError('Chỉ sửa suất diễn khi sự kiện ở DRAFT', 409);
+  if (event.status !== "DRAFT") throw httpError("Chỉ sửa suất diễn khi sự kiện ở DRAFT", 409);
   const b = req.body || {};
   // Đổi giờ bắt đầu mà không gửi giờ kết thúc: dời giờ kết thúc theo, giữ nguyên thời lượng cũ
   let endTime = b.endTime ?? session.end_time;
   if (b.startTime !== undefined && b.endTime === undefined) {
-    const newStart = date(b.startTime, 'thời gian bắt đầu');
+    const newStart = date(b.startTime, "thời gian bắt đầu");
     endTime = new Date(newStart.getTime() + (session.end_time - session.start_time));
   }
   const merged = parseSession({ name: b.name ?? session.name, startTime: b.startTime ?? session.start_time, endTime });
   await EventSession.updateOne({ _id: session._id }, { $set: merged });
   await recalcEvent(event._id);
-  res.json({ success: true, message: 'Đã cập nhật suất diễn' });
+  res.json({ success: true, message: "Đã cập nhật suất diễn" });
 });
 
 exports.deleteSession = ah(async (req, res) => {
   const { session, event } = await ownSession(req, req.params.sessionId);
-  if (event.status !== 'DRAFT') throw httpError('Chỉ xoá suất diễn khi sự kiện ở DRAFT', 409);
-  if ((await EventSession.countDocuments({ event_id: event._id })) <= 1)
-    throw httpError('Sự kiện phải còn ít nhất 1 suất diễn', 409);
-  if (await Order.countDocuments({ session_id: session._id }))
-    throw httpError('Suất diễn đã có đơn hàng, không xoá được', 409);
+  if (event.status !== "DRAFT") throw httpError("Chỉ xoá suất diễn khi sự kiện ở DRAFT", 409);
+  if ((await EventSession.countDocuments({ event_id: event._id })) <= 1) throw httpError("Sự kiện phải còn ít nhất 1 suất diễn", 409);
+  if (await Order.countDocuments({ session_id: session._id })) throw httpError("Suất diễn đã có đơn hàng, không xoá được", 409);
   await Seat.deleteMany({ session_id: session._id });
   await TicketTier.deleteMany({ session_id: session._id });
   await EventSession.deleteOne({ _id: session._id });
   await recalcEvent(event._id);
-  res.json({ success: true, message: 'Đã xoá suất diễn' });
+  res.json({ success: true, message: "Đã xoá suất diễn" });
 });
 
 // ------------------------------------------------------------------ UC25: hạng vé
 exports.addTier = ah(async (req, res) => {
   const { session, event } = await ownSession(req, req.params.sessionId);
   assertSelling(event);
-  if ((await TicketTier.countDocuments({ session_id: session._id })) >= 50)
-    throw httpError('Tối đa 50 hạng vé mỗi suất', 400);
-  const tier = await TicketTier.create({
-    ...parseTier(req.body, session.start_time),
-    event_id: event._id,
-    session_id: session._id,
-  });
+  if ((await TicketTier.countDocuments({ session_id: session._id })) >= 50) throw httpError("Tối đa 50 hạng vé mỗi suất", 400);
+  const tier = await TicketTier.create({ ...parseTier(req.body, session.start_time), event_id: event._id, session_id: session._id });
   await recalcEvent(event._id);
-  await audit(req, 'TIER_CREATE', 'ticket_tiers', tier._id, { eventId: event._id });
+  await audit(req, "TIER_CREATE", "ticket_tiers", tier._id, { eventId: event._id });
   res.status(201).json({ success: true, tier: tierToClient(tier) });
 });
 
@@ -622,49 +521,38 @@ exports.updateTier = ah(async (req, res) => {
   const session = await EventSession.findById(tier.session_id);
   const b = req.body || {};
   const set = {};
-  if (b.name !== undefined) set.name = str(b.name, 150, 'tên hạng vé');
-  if (b.price !== undefined) set.price = num(b.price, 0, 100_000_000, 'giá');
-  if (b.description !== undefined) set.description = str(b.description, 500, 'mô tả', { required: false }) || '';
+  if (b.name !== undefined) set.name = str(b.name, 150, "tên hạng vé");
+  if (b.price !== undefined) set.price = num(b.price, 0, 100_000_000, "giá");
+  if (b.description !== undefined) set.description = str(b.description, 500, "mô tả", { required: false }) || "";
   if (b.zoneColor !== undefined) {
-    if (!COLOR.test(b.zoneColor)) throw httpError('zoneColor phải dạng #RRGGBB', 400);
+    if (!COLOR.test(b.zoneColor)) throw httpError("zoneColor phải dạng #RRGGBB", 400);
     set.zone_color = b.zoneColor;
   }
-  const min = b.minPerOrder !== undefined ? intIn(b.minPerOrder, 1, 100, 'minPerOrder') : tier.min_per_order;
-  const max = b.maxPerOrder !== undefined ? intIn(b.maxPerOrder, 1, 100, 'maxPerOrder') : tier.max_per_order;
-  if (min > max) throw httpError('minPerOrder không được lớn hơn maxPerOrder', 400);
+  const min = b.minPerOrder !== undefined ? intIn(b.minPerOrder, 1, 100, "minPerOrder") : tier.min_per_order;
+  const max = b.maxPerOrder !== undefined ? intIn(b.maxPerOrder, 1, 100, "maxPerOrder") : tier.max_per_order;
+  if (min > max) throw httpError("minPerOrder không được lớn hơn maxPerOrder", 400);
   set.min_per_order = min;
   set.max_per_order = max;
-  const from = b.saleStartTime !== undefined ? date(b.saleStartTime, 'giờ mở bán') : tier.sale_start_time;
-  const to = b.saleEndTime !== undefined ? date(b.saleEndTime, 'giờ đóng bán') : tier.sale_end_time;
-  if (to <= from) throw httpError('Giờ đóng bán phải sau giờ mở bán', 400);
+  const from = b.saleStartTime !== undefined ? date(b.saleStartTime, "giờ mở bán") : tier.sale_start_time;
+  const to = b.saleEndTime !== undefined ? date(b.saleEndTime, "giờ đóng bán") : tier.sale_end_time;
+  if (to <= from) throw httpError("Giờ đóng bán phải sau giờ mở bán", 400);
   set.sale_start_time = from;
   set.sale_end_time = to;
 
   if (b.totalQuantity !== undefined) {
-    if (tier.zone_type === 'SEATED')
-      throw httpError(
-        'Hạng vé bán theo ghế: số lượng bằng số ghế, do Admin dựng sơ đồ (SVG + Excel) quyết định, không sửa tay được',
-        400,
-      );
-    const n = intIn(b.totalQuantity, 1, 100000, 'totalQuantity');
+    if (tier.zone_type === "SEATED") throw httpError("Hạng vé bán theo ghế: số lượng bằng số ghế, do Admin dựng sơ đồ (SVG + Excel) quyết định, không sửa tay được", 400);
+    const n = intIn(b.totalQuantity, 1, 100000, "totalQuantity");
     // Nguyên tử: chỉ cho giảm tới mức đã bán + đang giữ chỗ
     const q = await TicketTier.findOneAndUpdate(
-      { _id: tier._id, $expr: { $lte: [{ $subtract: ['$total_quantity', '$available_quantity'] }, n] } },
-      [
-        {
-          $set: {
-            total_quantity: n,
-            available_quantity: { $subtract: [n, { $subtract: ['$total_quantity', '$available_quantity'] }] },
-          },
-        },
-      ],
+      { _id: tier._id, $expr: { $lte: [{ $subtract: ["$total_quantity", "$available_quantity"] }, n] } },
+      [{ $set: { total_quantity: n, available_quantity: { $subtract: [n, { $subtract: ["$total_quantity", "$available_quantity"] }] } } }],
       { new: true },
     );
     if (!q) throw httpError(`Không giảm xuống ${n}: đã bán / đang giữ ${usedOf(tier)} vé`, 409);
   }
   await TicketTier.updateOne({ _id: tier._id }, { $set: set });
   await recalcEvent(event._id);
-  await audit(req, 'TIER_UPDATE', 'ticket_tiers', tier._id, { fields: Object.keys(b), session: session?._id });
+  await audit(req, "TIER_UPDATE", "ticket_tiers", tier._id, { fields: Object.keys(b), session: session?._id });
   res.json({ success: true, tier: tierToClient(await TicketTier.findById(tier._id)) });
 });
 
@@ -672,37 +560,32 @@ exports.deleteTier = ah(async (req, res) => {
   const { tier, event } = await ownTier(req, req.params.tierId);
   assertSelling(event);
   if (usedOf(tier) > 0) throw httpError(`Hạng vé đã bán hoặc đang được giữ ${usedOf(tier)} vé, không xoá được`, 409);
-  if (await Seat.countDocuments({ tier_id: tier._id, status: { $ne: 'AVAILABLE' } }))
-    throw httpError('Hạng vé có ghế đang được giữ / đã bán', 409);
-  if (event.status !== 'DRAFT' && (await TicketTier.countDocuments({ event_id: event._id })) <= 1) {
-    throw httpError('Sự kiện đã duyệt phải còn ít nhất 1 hạng vé', 409);
+  if (await Seat.countDocuments({ tier_id: tier._id, status: { $ne: "AVAILABLE" } })) throw httpError("Hạng vé có ghế đang được giữ / đã bán", 409);
+  if (event.status !== "DRAFT" && (await TicketTier.countDocuments({ event_id: event._id })) <= 1) {
+    throw httpError("Sự kiện đã duyệt phải còn ít nhất 1 hạng vé", 409);
   }
   await Seat.deleteMany({ tier_id: tier._id });
   await TicketTier.deleteOne({ _id: tier._id });
   await recalcEvent(event._id);
-  await audit(req, 'TIER_DELETE', 'ticket_tiers', tier._id);
-  res.json({ success: true, message: 'Đã xoá hạng vé' });
+  await audit(req, "TIER_DELETE", "ticket_tiers", tier._id);
+  res.json({ success: true, message: "Đã xoá hạng vé" });
 });
 
 // ------------------------------------------------------------------ UC26: custom form
 // PUT /v1/organizer/events/:id/custom-form
 exports.updateCustomForm = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  const questions =
-    req.body.attendeeFormSchema ||
-    req.body.customFormSchema ||
-    req.body.questions ||
-    (Array.isArray(req.body) ? req.body : []);
+  const questions = req.body.attendeeFormSchema || req.body.customFormSchema || req.body.questions || (Array.isArray(req.body) ? req.body : []);
   const parsed = parseForm(questions);
-  if (!parsed) throw httpError('Cấu trúc biểu mẫu tuỳ chỉnh không hợp lệ', 400);
+  if (!parsed) throw httpError("Cấu trúc biểu mẫu tuỳ chỉnh không hợp lệ", 400);
 
   e.custom_form_schema = parsed;
   await e.save();
-  await audit(req, 'EVENT_CUSTOM_FORM_UPDATE', 'events', e._id, { questionCount: parsed.length });
+  await audit(req, "EVENT_CUSTOM_FORM_UPDATE", "events", e._id, { questionCount: parsed.length });
 
   res.json({
     success: true,
-    message: 'Đã lưu biểu mẫu thông tin người tham dự',
+    message: "Đã lưu biểu mẫu thông tin người tham dự",
     customFormSchema: parsed,
     attendeeFormSchema: parsed,
   });
@@ -717,7 +600,7 @@ exports.getEventOrders = ah(async (req, res) => {
   const query = { event_id: e._id };
   if (status) query.status = status;
   if (search) {
-    const rx = { $regex: String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const rx = { $regex: String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     query.$or = [{ order_code: rx }];
   }
 
@@ -728,8 +611,8 @@ exports.getEventOrders = ah(async (req, res) => {
   const [total, orders] = await Promise.all([
     Order.countDocuments(query),
     Order.find(query)
-      .populate('buyer_id', 'full_name username email phone')
-      .populate('session_id', 'name start_time')
+      .populate("buyer_id", "full_name username email phone")
+      .populate("session_id", "name start_time")
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limitNum),
@@ -772,7 +655,7 @@ exports.getEventAttendees = ah(async (req, res) => {
   if (sessionId) query.session_id = sessionId;
   if (tierId) query.tier_id = tierId;
   if (search) {
-    const rx = { $regex: String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const rx = { $regex: String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     query.ticket_code = rx;
   }
 
@@ -783,11 +666,11 @@ exports.getEventAttendees = ah(async (req, res) => {
   const [total, tickets] = await Promise.all([
     Ticket.countDocuments(query),
     Ticket.find(query)
-      .populate('owner_id', 'full_name username email phone')
-      .populate('tier_id', 'name price')
-      .populate('seat_id', 'section_name row_label seat_number')
-      .populate('session_id', 'name start_time')
-      .populate('order_id', 'order_code attendee_form_answers')
+      .populate("owner_id", "full_name username email phone")
+      .populate("tier_id", "name price")
+      .populate("seat_id", "section_name row_label seat_number")
+      .populate("session_id", "name start_time")
+      .populate("order_id", "order_code attendee_form_answers")
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limitNum),
@@ -806,7 +689,7 @@ exports.getEventAttendees = ah(async (req, res) => {
       },
       tierName: t.tier_id?.name,
       price: t.tier_id?.price,
-      seat: t.seat_id ? `${t.seat_id.section_name}-${t.seat_id.row_label}${t.seat_id.seat_number}` : 'GA',
+      seat: t.seat_id ? `${t.seat_id.section_name}-${t.seat_id.row_label}${t.seat_id.seat_number}` : "GA",
       sessionName: t.session_id?.name,
       status: t.status,
       checkedInAt: t.checked_in_at,
@@ -824,7 +707,7 @@ exports.getEventAttendees = ah(async (req, res) => {
 exports.listStaff = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   const assignments = await StaffAssignment.find({ event_id: e._id })
-    .populate('staff_user_id', 'full_name username email phone avatar_url')
+    .populate("staff_user_id", "full_name username email phone avatar_url")
     .sort({ created_at: -1 });
 
   const mapped = assignments.map((a) => ({
@@ -852,8 +735,8 @@ exports.listStaff = ah(async (req, res) => {
 // POST /v1/organizer/events/:id/staff
 exports.addStaff = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
-  const { email, username, staffUserId, assignedGate = 'Cổng chính' } = req.body;
-  if (!email && !username && !staffUserId) throw httpError('Cần cung cấp email, username hoặc ID của nhân viên', 400);
+  const { email, username, staffUserId, assignedGate = "Cổng chính" } = req.body;
+  if (!email && !username && !staffUserId) throw httpError("Cần cung cấp email, username hoặc ID của nhân viên", 400);
 
   const query = {};
   if (staffUserId) query._id = staffUserId;
@@ -861,10 +744,10 @@ exports.addStaff = ah(async (req, res) => {
   else query.username = String(username).trim();
 
   let user = await User.findOne(query);
-  if (!user) throw httpError('Không tìm thấy người dùng với thông tin này', 404);
+  if (!user) throw httpError("Không tìm thấy người dùng với thông tin này", 404);
 
-  if (user.role === 'CUSTOMER') {
-    user.role = 'STAFF';
+  if (user.role === "CUSTOMER") {
+    user.role = "STAFF";
     await user.save();
   }
 
@@ -876,12 +759,12 @@ exports.addStaff = ah(async (req, res) => {
       await existing.save();
       return res.json({
         success: true,
-        message: 'Đã kích hoạt lại nhân viên soát vé',
+        message: "Đã kích hoạt lại nhân viên soát vé",
         assignmentId: existing._id,
         assignment: { id: existing._id, assigned_gate: existing.assigned_gate, isActive: existing.is_active },
       });
     }
-    throw httpError('Nhân viên này đã được phân công vào sự kiện', 409);
+    throw httpError("Nhân viên này đã được phân công vào sự kiện", 409);
   }
 
   const assignment = await StaffAssignment.create({
@@ -892,11 +775,11 @@ exports.addStaff = ah(async (req, res) => {
     is_active: true,
   });
 
-  await audit(req, 'STAFF_ASSIGN', 'staff_assignments', assignment._id, { eventId: e._id, staffId: user._id });
+  await audit(req, "STAFF_ASSIGN", "staff_assignments", assignment._id, { eventId: e._id, staffId: user._id });
 
   res.status(201).json({
     success: true,
-    message: 'Đã phân công nhân viên soát vé thành công',
+    message: "Đã phân công nhân viên soát vé thành công",
     assignmentId: assignment._id,
     assignment: {
       id: assignment._id,
@@ -914,10 +797,10 @@ exports.addStaff = ah(async (req, res) => {
 
 // PUT /v1/organizer/staff-assignments/:assignmentId
 exports.updateStaffAssignment = ah(async (req, res) => {
-  const assignment = await StaffAssignment.findById(req.params.assignmentId).populate('event_id');
-  if (!assignment) throw httpError('Không tìm thấy phân công nhân viên', 404);
+  const assignment = await StaffAssignment.findById(req.params.assignmentId).populate("event_id");
+  if (!assignment) throw httpError("Không tìm thấy phân công nhân viên", 404);
   if (String(assignment.event_id?.organizer_id) !== String(req.user.id)) {
-    throw httpError('Không có quyền chỉnh sửa phân công của sự kiện này', 403);
+    throw httpError("Không có quyền chỉnh sửa phân công của sự kiện này", 403);
   }
 
   const { assignedGate, isActive } = req.body;
@@ -925,23 +808,23 @@ exports.updateStaffAssignment = ah(async (req, res) => {
   if (isActive !== undefined) assignment.is_active = Boolean(isActive);
 
   await assignment.save();
-  await audit(req, 'STAFF_ASSIGNMENT_UPDATE', 'staff_assignments', assignment._id, { assignedGate, isActive });
+  await audit(req, "STAFF_ASSIGNMENT_UPDATE", "staff_assignments", assignment._id, { assignedGate, isActive });
 
-  res.json({ success: true, message: 'Đã cập nhật phân công nhân viên', assignment });
+  res.json({ success: true, message: "Đã cập nhật phân công nhân viên", assignment });
 });
 
 // DELETE /v1/organizer/staff-assignments/:assignmentId
 exports.removeStaffAssignment = ah(async (req, res) => {
-  const assignment = await StaffAssignment.findById(req.params.assignmentId).populate('event_id');
-  if (!assignment) throw httpError('Không tìm thấy phân công nhân viên', 404);
+  const assignment = await StaffAssignment.findById(req.params.assignmentId).populate("event_id");
+  if (!assignment) throw httpError("Không tìm thấy phân công nhân viên", 404);
   if (String(assignment.event_id?.organizer_id) !== String(req.user.id)) {
-    throw httpError('Không có quyền xoá phân công của sự kiện này', 403);
+    throw httpError("Không có quyền xoá phân công của sự kiện này", 403);
   }
 
   await StaffAssignment.deleteOne({ _id: assignment._id });
-  await audit(req, 'STAFF_ASSIGNMENT_DELETE', 'staff_assignments', assignment._id);
+  await audit(req, "STAFF_ASSIGNMENT_DELETE", "staff_assignments", assignment._id);
 
-  res.json({ success: true, message: 'Đã xoá nhân viên khỏi sự kiện' });
+  res.json({ success: true, message: "Đã xoá nhân viên khỏi sự kiện" });
 });
 
 // ------------------------------------------------------------------ UC31: organizer dashboard
@@ -951,24 +834,24 @@ exports.getDashboard = ah(async (req, res) => {
   const eventIds = orgEvents.map((e) => e._id);
 
   const [paidOrders, totalTicketsSold, checkedInTickets] = await Promise.all([
-    Order.find({ event_id: { $in: eventIds }, status: 'PAID' }),
-    Ticket.countDocuments({ event_id: { $in: eventIds }, status: { $in: ['VALID', 'USED'] } }),
-    Ticket.countDocuments({ event_id: { $in: eventIds }, status: 'USED' }),
+    Order.find({ event_id: { $in: eventIds }, status: "PAID" }),
+    Ticket.countDocuments({ event_id: { $in: eventIds }, status: { $in: ["VALID", "USED"] } }),
+    Ticket.countDocuments({ event_id: { $in: eventIds }, status: "USED" }),
   ]);
 
   const totalGrossRevenue = paidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
   const eventCounts = {
     total: orgEvents.length,
-    draft: orgEvents.filter((e) => e.status === 'DRAFT').length,
-    pending: orgEvents.filter((e) => e.status === 'PENDING').length,
-    approved: orgEvents.filter((e) => e.status === 'APPROVED').length,
-    published: orgEvents.filter((e) => e.status === 'PUBLISHED').length,
-    ended: orgEvents.filter((e) => e.status === 'ENDED').length,
-    cancelled: orgEvents.filter((e) => e.status === 'CANCELLED').length,
+    draft: orgEvents.filter((e) => e.status === "DRAFT").length,
+    pending: orgEvents.filter((e) => e.status === "PENDING").length,
+    approved: orgEvents.filter((e) => e.status === "APPROVED").length,
+    published: orgEvents.filter((e) => e.status === "PUBLISHED").length,
+    ended: orgEvents.filter((e) => e.status === "ENDED").length,
+    cancelled: orgEvents.filter((e) => e.status === "CANCELLED").length,
   };
 
   const upcomingEvents = orgEvents
-    .filter((e) => ['APPROVED', 'PUBLISHED'].includes(e.status) && (!e.start_time || e.start_time >= new Date()))
+    .filter((e) => ["APPROVED", "PUBLISHED"].includes(e.status) && (!e.start_time || e.start_time >= new Date()))
     .slice(0, 5)
     .map((e) => ({
       id: e._id,
@@ -982,8 +865,8 @@ exports.getDashboard = ah(async (req, res) => {
     Order.find({ event_id: { $in: eventIds } })
       .sort({ created_at: -1 })
       .limit(10)
-      .populate('buyer_id', 'full_name username')
-      .populate('event_id', 'title'),
+      .populate("buyer_id", "full_name username")
+      .populate("event_id", "title"),
   ]);
 
   res.json({
@@ -1022,10 +905,10 @@ exports.getEventAnalytics = ah(async (req, res) => {
   const [sessions, tiers, paidOrders, contract, checkedInCount, totalTicketsSold] = await Promise.all([
     EventSession.find({ event_id: e._id }),
     TicketTier.find({ event_id: e._id }),
-    Order.find({ event_id: e._id, status: 'PAID' }),
-    EContract.findOne({ event_id: e._id, status: { $in: ['WAITING_SIGN', 'SIGNED'] } }),
-    Ticket.countDocuments({ event_id: e._id, status: 'USED' }),
-    Ticket.countDocuments({ event_id: e._id, status: { $in: ['VALID', 'USED'] } }),
+    Order.find({ event_id: e._id, status: "PAID" }),
+    EContract.findOne({ event_id: e._id, status: { $in: ["WAITING_SIGN", "SIGNED"] } }),
+    Ticket.countDocuments({ event_id: e._id, status: "USED" }),
+    Ticket.countDocuments({ event_id: e._id, status: { $in: ["VALID", "USED"] } }),
   ]);
 
   const grossRevenue = paidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
@@ -1095,34 +978,34 @@ exports.getEventAnalytics = ah(async (req, res) => {
 exports.exportAttendees = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   const tickets = await Ticket.find({ event_id: e._id })
-    .populate('owner_id', 'full_name username email phone')
-    .populate('tier_id', 'name price')
-    .populate('seat_id', 'section_name row_label seat_number')
-    .populate('session_id', 'name')
+    .populate("owner_id", "full_name username email phone")
+    .populate("tier_id", "name price")
+    .populate("seat_id", "section_name row_label seat_number")
+    .populate("session_id", "name")
     .sort({ created_at: -1 });
 
   const rows = [
-    ['Mã vé', 'Suất diễn', 'Hạng vé', 'Ghế', 'Họ tên', 'Email', 'Số điện thoại', 'Trạng thái', 'Thời gian soát vé'],
+    ["Mã vé", "Suất diễn", "Hạng vé", "Ghế", "Họ tên", "Email", "Số điện thoại", "Trạng thái", "Thời gian soát vé"],
   ];
 
   for (const t of tickets) {
     rows.push([
       t.ticket_code,
-      t.session_id?.name || '',
-      t.tier_id?.name || '',
-      t.seat_id ? `${t.seat_id.section_name}-${t.seat_id.row_label}${t.seat_id.seat_number}` : 'GA',
-      t.owner_id?.full_name || t.owner_id?.username || '',
-      t.owner_id?.email || '',
-      t.owner_id?.phone || '',
+      t.session_id?.name || "",
+      t.tier_id?.name || "",
+      t.seat_id ? `${t.seat_id.section_name}-${t.seat_id.row_label}${t.seat_id.seat_number}` : "GA",
+      t.owner_id?.full_name || t.owner_id?.username || "",
+      t.owner_id?.email || "",
+      t.owner_id?.phone || "",
       t.status,
-      t.checked_in_at ? new Date(t.checked_in_at).toLocaleString('vi-VN') : '',
+      t.checked_in_at ? new Date(t.checked_in_at).toLocaleString("vi-VN") : "",
     ]);
   }
 
-  const csv = '\uFEFF' + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
 
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="attendees-${e._id}.csv"`);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="attendees-${e._id}.csv"`);
   res.send(csv);
 });
 
@@ -1130,48 +1013,35 @@ exports.exportAttendees = ah(async (req, res) => {
 exports.exportOrders = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   const orders = await Order.find({ event_id: e._id })
-    .populate('buyer_id', 'full_name username email phone')
-    .populate('session_id', 'name')
+    .populate("buyer_id", "full_name username email phone")
+    .populate("session_id", "name")
     .sort({ created_at: -1 });
 
   const rows = [
-    [
-      'Mã đơn',
-      'Suất diễn',
-      'Họ tên khách',
-      'Email',
-      'Số điện thoại',
-      'Tổng tiền',
-      'Giảm giá',
-      'Thực thu',
-      'Trạng thái',
-      'Ngày tạo',
-      'Công ty VAT',
-      'MST VAT',
-    ],
+    ["Mã đơn", "Suất diễn", "Họ tên khách", "Email", "Số điện thoại", "Tổng tiền", "Giảm giá", "Thực thu", "Trạng thái", "Ngày tạo", "Công ty VAT", "MST VAT"],
   ];
 
   for (const o of orders) {
     rows.push([
       o.order_code,
-      o.session_id?.name || '',
-      o.buyer_id?.full_name || o.buyer_id?.username || '',
-      o.buyer_id?.email || '',
-      o.buyer_id?.phone || '',
+      o.session_id?.name || "",
+      o.buyer_id?.full_name || o.buyer_id?.username || "",
+      o.buyer_id?.email || "",
+      o.buyer_id?.phone || "",
       o.subtotal_amount,
       o.discount_amount,
       o.total_amount,
       o.status,
-      o.created_at ? new Date(o.created_at).toLocaleString('vi-VN') : '',
-      o.vat_invoice_info?.company_name || '',
-      o.vat_invoice_info?.tax_code || '',
+      o.created_at ? new Date(o.created_at).toLocaleString("vi-VN") : "",
+      o.vat_invoice_info?.company_name || "",
+      o.vat_invoice_info?.tax_code || "",
     ]);
   }
 
-  const csv = '\uFEFF' + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
 
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="orders-${e._id}.csv"`);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="orders-${e._id}.csv"`);
   res.send(csv);
 });
 
@@ -1180,8 +1050,8 @@ exports.exportOrders = ah(async (req, res) => {
 exports.getPayoutSummary = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   const [paidOrders, contract, profile, existingSettlement] = await Promise.all([
-    Order.find({ event_id: e._id, status: 'PAID' }),
-    EContract.findOne({ event_id: e._id, status: { $in: ['WAITING_SIGN', 'SIGNED'] } }),
+    Order.find({ event_id: e._id, status: "PAID" }),
+    EContract.findOne({ event_id: e._id, status: { $in: ["WAITING_SIGN", "SIGNED"] } }),
     OrganizerProfile.findOne({ user_id: req.user.id }),
     PayoutSettlement.findOne({ event_id: e._id }),
   ]);
@@ -1231,12 +1101,12 @@ exports.requestPayout = ah(async (req, res) => {
       event_id: e._id,
       organizer_id: req.user.id,
       commission_rate_pct: 10,
-      contract_terms_html: '<p>Hợp đồng điện tử</p>',
-      status: 'SIGNED',
+      contract_terms_html: "<p>Hợp đồng điện tử</p>",
+      status: "SIGNED",
     });
   }
 
-  const paidOrders = await Order.find({ event_id: e._id, status: 'PAID' });
+  const paidOrders = await Order.find({ event_id: e._id, status: "PAID" });
   const grossRevenue = paidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
   const commissionRatePct = contract.commission_rate_pct ?? contract.platform_commission_pct ?? 10;
   const platformCommissionAmt = Math.round((grossRevenue * commissionRatePct) / 100);
@@ -1250,17 +1120,17 @@ exports.requestPayout = ah(async (req, res) => {
     total_refunded: 0,
     platform_commission_amt: platformCommissionAmt,
     net_payout_amount: netPayoutAmount,
-    status: 'REQUESTED',
+    status: "REQUESTED",
   });
 
-  await audit(req, 'PAYOUT_REQUEST_CREATE', 'payout_settlements', settlement._id, {
+  await audit(req, "PAYOUT_REQUEST_CREATE", "payout_settlements", settlement._id, {
     eventId: e._id,
     netPayoutAmount,
   });
 
   res.status(201).json({
     success: true,
-    message: 'Đã gửi yêu cầu đối soát và rút tiền thành công!',
+    message: "Đã gửi yêu cầu đối soát và rút tiền thành công!",
     settlementId: settlement._id,
     netPayoutAmount,
     status: settlement.status,
@@ -1270,7 +1140,7 @@ exports.requestPayout = ah(async (req, res) => {
 // GET /v1/organizer/payouts
 exports.listPayouts = ah(async (req, res) => {
   const settlements = await PayoutSettlement.find({ organizer_id: req.user.id })
-    .populate('event_id', 'title banner_url')
+    .populate("event_id", "title banner_url")
     .sort({ created_at: -1 });
 
   res.json({
@@ -1290,16 +1160,4 @@ exports.listPayouts = ah(async (req, res) => {
   });
 });
 
-exports._helpers = {
-  ownEvent,
-  ownSession,
-  ownTier,
-  assertSelling,
-  recalcEvent,
-  tierToClient,
-  usedOf,
-  num,
-  bool,
-  COLOR,
-  SELLING,
-};
+exports._helpers = { ownEvent, ownSession, ownTier, assertSelling, recalcEvent, tierToClient, usedOf, num, bool, COLOR, SELLING };
