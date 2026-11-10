@@ -1,10 +1,10 @@
-const { Event, EventSession, TicketTier, Category, Review, Ticket } = require("../models");
-const { saveUploadedFile } = require("../utils/upload");
-const { eventToClient } = require("../utils/serializers");
-const { redis } = require("../config/redis");
-const { audit } = require("../utils/audit");
+const { Event, EventSession, TicketTier, Category, Review, Ticket } = require('../models');
+const { saveUploadedFile } = require('../utils/upload');
+const { eventToClient } = require('../utils/serializers');
+const { redis } = require('../config/redis');
+const { audit } = require('../utils/audit');
 
-const PUBLIC_STATUS = { $in: ["APPROVED", "PUBLISHED"] };
+const PUBLIC_STATUS = { $in: ['APPROVED', 'PUBLISHED'] };
 
 /** Gắn event_sessions + ticket_tiers vào danh sách event (2 query cho cả danh sách). */
 async function withTiers(events) {
@@ -17,9 +17,7 @@ async function withTiers(events) {
   const tierByEvent = {};
   for (const s of sessions) (sessByEvent[s.event_id.toString()] ||= []).push(s);
   for (const t of tiers) (tierByEvent[t.event_id.toString()] ||= []).push(t);
-  return events.map((e) =>
-    eventToClient(e, sessByEvent[e._id.toString()] || [], tierByEvent[e._id.toString()] || []),
-  );
+  return events.map((e) => eventToClient(e, sessByEvent[e._id.toString()] || [], tierByEvent[e._id.toString()] || []));
 }
 
 // GET /events/:id
@@ -27,12 +25,12 @@ exports.getById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
     if (!event) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
+      return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
     }
     const [populated] = await withTiers([event]);
     res.json({ success: true, event: populated });
   } catch (err) {
-    res.status(400).json({ success: false, message: "ID sự kiện không hợp lệ" });
+    res.status(400).json({ success: false, message: 'ID sự kiện không hợp lệ' });
   }
 };
 
@@ -102,12 +100,12 @@ exports.search = async (req, res) => {
 
     const textQuery = name || keyword || q;
     if (textQuery) {
-      const rx = { $regex: String(textQuery).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+      const rx = { $regex: String(textQuery).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
       filter.$or = [{ title: rx }, { slug: rx }, { city: rx }, { venue_name: rx }, { description: rx }];
     }
 
     if (city) {
-      filter.city = { $regex: String(city).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+      filter.city = { $regex: String(city).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
 
     const catTarget = categoryId || category;
@@ -136,21 +134,21 @@ exports.search = async (req, res) => {
 
     if (minPrice !== undefined || maxPrice !== undefined) {
       filter.lowest_price = {};
-      if (minPrice !== undefined && minPrice !== "") filter.lowest_price.$gte = Number(minPrice);
-      if (maxPrice !== undefined && maxPrice !== "") filter.lowest_price.$lte = Number(maxPrice);
+      if (minPrice !== undefined && minPrice !== '') filter.lowest_price.$gte = Number(minPrice);
+      if (maxPrice !== undefined && maxPrice !== '') filter.lowest_price.$lte = Number(maxPrice);
       if (Object.keys(filter.lowest_price).length === 0) delete filter.lowest_price;
     }
 
-    if (hasSeatMap !== undefined && hasSeatMap !== "") {
-      filter.has_seat_map = hasSeatMap === "true" || hasSeatMap === true;
+    if (hasSeatMap !== undefined && hasSeatMap !== '') {
+      filter.has_seat_map = hasSeatMap === 'true' || hasSeatMap === true;
     }
 
     let sortOption = { created_at: -1 };
-    if (sort === "price_asc") sortOption = { lowest_price: 1 };
-    else if (sort === "price_desc") sortOption = { lowest_price: -1 };
-    else if (sort === "date_asc") sortOption = { start_time: 1 };
-    else if (sort === "date_desc") sortOption = { start_time: -1 };
-    else if (sort === "newest") sortOption = { created_at: -1 };
+    if (sort === 'price_asc') sortOption = { lowest_price: 1 };
+    else if (sort === 'price_desc') sortOption = { lowest_price: -1 };
+    else if (sort === 'date_asc') sortOption = { start_time: 1 };
+    else if (sort === 'date_desc') sortOption = { start_time: -1 };
+    else if (sort === 'newest') sortOption = { created_at: -1 };
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
@@ -202,21 +200,24 @@ exports.myEvents = async (req, res) => {
 // Trạng thái hiển thị = trạng thái Mongo, ghế đang bị khóa trong Redis cũng hiện LOCKED.
 exports.getSessionSeats = async (req, res) => {
   try {
-    const { Seat } = require("../models");
-    const { getLockedSeatIds } = require("../services/seatLockService");
+    const { Seat } = require('../models');
+    const { getLockedSeatIds } = require('../services/seatLockService');
     const session = await EventSession.findById(req.params.sessionId);
-    if (!session) return res.status(404).json({ success: false, message: "Không tìm thấy suất diễn" });
+    if (!session) return res.status(404).json({ success: false, message: 'Không tìm thấy suất diễn' });
 
     const [seats, tiers] = await Promise.all([
       Seat.find({ session_id: session._id }).sort({ section_name: 1, row_label: 1, seat_number: 1 }),
       TicketTier.find({ session_id: session._id }),
     ]);
-    const redisLocked = await getLockedSeatIds(session._id, seats.map((s) => s._id));
+    const redisLocked = await getLockedSeatIds(
+      session._id,
+      seats.map((s) => s._id),
+    );
     const now = new Date();
     const status = (s) => {
-      if (s.status === "SOLD") return "SOLD";
-      if (s.status === "LOCKED" && s.lock_expires_at > now) return "LOCKED";
-      return redisLocked.has(s.id) ? "LOCKED" : "AVAILABLE";
+      if (s.status === 'SOLD') return 'SOLD';
+      if (s.status === 'LOCKED' && s.lock_expires_at > now) return 'LOCKED';
+      return redisLocked.has(s.id) ? 'LOCKED' : 'AVAILABLE';
     };
 
     res.json({
@@ -234,7 +235,7 @@ exports.getSessionSeats = async (req, res) => {
         price: t.price,
         desc: t.description,
         zoneColor: t.zone_color,
-        zoneType: t.zone_type || "GA",
+        zoneType: t.zone_type || 'GA',
         minPerOrder: t.min_per_order,
         maxPerOrder: t.max_per_order,
         numberOfTicketLeft: t.available_quantity,
@@ -251,7 +252,7 @@ exports.getSessionSeats = async (req, res) => {
       })),
     });
   } catch (err) {
-    res.status(400).json({ success: false, message: "ID suất diễn không hợp lệ" });
+    res.status(400).json({ success: false, message: 'ID suất diễn không hợp lệ' });
   }
 };
 
@@ -261,14 +262,14 @@ const memWaitingRooms = new Map();
 exports.joinWaitingRoom = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
 
     const identifier = req.user?.id || req.body?.identifier || req.ip;
     const qKey = `waiting_room:${event._id}`;
     const now = Date.now();
 
-    if (redis && redis.status === "ready") {
-      await redis.zadd(qKey, "NX", now, String(identifier));
+    if (redis && redis.status === 'ready') {
+      await redis.zadd(qKey, 'NX', now, String(identifier));
       const rank = await redis.zrank(qKey, String(identifier));
       const position = rank !== null ? rank + 1 : 1;
       const passGranted = position <= 10;
@@ -307,12 +308,12 @@ exports.joinWaitingRoom = async (req, res) => {
 exports.waitingRoomStatus = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
 
     const identifier = req.user?.id || req.query.identifier || req.ip;
     const qKey = `waiting_room:${event._id}`;
 
-    if (redis && redis.status === "ready") {
+    if (redis && redis.status === 'ready') {
       const rank = await redis.zrank(qKey, String(identifier));
       if (rank === null) {
         return res.json({ success: true, inQueue: false, passGranted: true });
@@ -357,11 +358,11 @@ exports.waitingRoomStatus = async (req, res) => {
 exports.listReviews = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
 
     const reviews = await Review.find({ event_id: event._id })
-      .populate("user_id", "full_name username avatar_url")
-      .populate("ticket_id", "ticket_code")
+      .populate('user_id', 'full_name username avatar_url')
+      .populate('ticket_id', 'ticket_code')
       .sort({ created_at: -1 });
 
     const total = reviews.length;
@@ -375,7 +376,7 @@ exports.listReviews = async (req, res) => {
         _id: r._id,
         user: {
           id: r.user_id?._id,
-          name: r.user_id?.full_name || r.user_id?.username || "Khách",
+          name: r.user_id?.full_name || r.user_id?.username || 'Khách',
           avatarUrl: r.user_id?.avatar_url,
         },
         rating: r.rating,
@@ -393,12 +394,12 @@ exports.listReviews = async (req, res) => {
 exports.createReview = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
 
     const { ticketId, rating, comment } = req.body;
     const rNum = Number(rating);
     if (!Number.isInteger(rNum) || rNum < 1 || rNum > 5) {
-      return res.status(400).json({ success: false, message: "Số sao đánh giá phải từ 1 đến 5" });
+      return res.status(400).json({ success: false, message: 'Số sao đánh giá phải từ 1 đến 5' });
     }
 
     let ticket = null;
@@ -409,14 +410,14 @@ exports.createReview = async (req, res) => {
     }
 
     if (!ticket) {
-      return res.status(403).json({ success: false, message: "Bạn không sở hữu vé hợp lệ cho sự kiện này" });
+      return res.status(403).json({ success: false, message: 'Bạn không sở hữu vé hợp lệ cho sự kiện này' });
     }
 
     const existed = await Review.findOne({
       $or: [{ ticket_id: ticket._id }, { event_id: event._id, user_id: req.user.id }],
     });
     if (existed) {
-      return res.status(409).json({ success: false, message: "Bạn đã đánh giá sự kiện này trước đó" });
+      return res.status(409).json({ success: false, message: 'Bạn đã đánh giá sự kiện này trước đó' });
     }
 
     const review = await Review.create({
@@ -424,14 +425,16 @@ exports.createReview = async (req, res) => {
       user_id: req.user.id,
       ticket_id: ticket._id,
       rating: rNum,
-      comment: String(comment || "").trim().slice(0, 2000),
+      comment: String(comment || '')
+        .trim()
+        .slice(0, 2000),
     });
 
-    await audit(req, "REVIEW_CREATE", "reviews", review._id, { eventId: event._id, rating: rNum });
+    await audit(req, 'REVIEW_CREATE', 'reviews', review._id, { eventId: event._id, rating: rNum });
 
     res.status(201).json({
       success: true,
-      message: "Cảm ơn bạn đã gửi đánh giá!",
+      message: 'Cảm ơn bạn đã gửi đánh giá!',
       reviewId: review._id,
     });
   } catch (err) {

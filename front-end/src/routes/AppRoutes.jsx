@@ -152,7 +152,7 @@ const AppRoutes = () => {
       <Route path={PATHS.PAYMENT_ERROR} element={<PaymentErr />} />
 
       {/* Fallback */}
-      <Route path="*" element={<Navigate to={PATHS.HOME} replace />} />
+      <Route path='*' element={<Navigate to={PATHS.HOME} replace />} />
     </Routes>
   );
 };

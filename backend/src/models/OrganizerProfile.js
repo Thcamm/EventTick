@@ -15,7 +15,7 @@ const schema = new Schema(
     kyc_status: { type: String, enum: ["PENDING", "VERIFIED", "REJECTED"], default: "PENDING", required: true },
     verified_by: ref("User"),
     verified_at: { type: Date },
-    rejection_reason: { type: String }, // mở rộng: lý do Admin từ chối KYC
+    rejection_reason: { type: String },
     submitted_at: { type: Date, default: Date.now },
   },
   options,

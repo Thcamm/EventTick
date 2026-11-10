@@ -41,6 +41,7 @@ const MyTicketPage = () => {
   };
 
   useEffect(() => {
+  useEffect(() => {
     fetchTickets();
   }, []);
 
@@ -170,17 +171,40 @@ const MyTicketPage = () => {
   };
 
   return (
-    <div className="container">
-      <div className="sidebar">
-        <h2>Tài khoản</h2>
-        <ul>
-          <li>Cài đặt tài khoản</li>
-          <li>
+    <div className='min-h-screen bg-[#0b0e14] text-slate-100 py-10 px-4 sm:px-6 lg:px-8 font-sans'>
+      <div className='max-w-6xl mx-auto'>
+        {/* ================================================================== */}
+        {/* 1. HEADER & NAVIGATION BUTTON GROUP (from template)               */}
+        {/* ================================================================== */}
+        <div className='text-center mb-8'>
+          <h1 className='text-3xl sm:text-4xl font-extrabold tracking-tight text-white flex items-center justify-center gap-3'>
+            <span className='material-symbols-outlined text-blue-500 text-3xl sm:text-4xl'>confirmation_number</span>
+            Vé của tôi
+          </h1>
+          <p className='text-slate-400 text-sm sm:text-base max-w-2xl mx-auto mt-2 leading-relaxed'>
+            Hệ thống vé trực tuyến 100%: Quản lý, tải vé PDF và xuất trình mã QR định danh bảo mật HMAC-SHA256 trực tiếp
+            tại cổng soát vé trên thiết bị của bạn.
+          </p>
+
+          {/* Button Group (Template Signature Navigation Bar) */}
+          <div className='inline-flex bg-[#161b24] p-1.5 rounded-full border border-slate-700/60 shadow-lg gap-1.5 mt-5'>
+            <Link
+              to={PATHS.USER_TICKETS}
+              className='bg-blue-600 text-white font-semibold shadow-md shadow-blue-600/30 px-6 py-2 rounded-full text-sm flex items-center gap-2 transition-all'>
+              <span className='material-symbols-outlined text-base'>local_activity</span>
+              Vé của tôi
+            </Link>
             <Link
               to={PATHS.USER_ACCOUNT}
-              style={{ textDecoration: "none", color: "#ffffff" }}
-            >
-              Thông tin tài khoản
+              className='text-slate-400 hover:text-white px-6 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-colors'>
+              <span className='material-symbols-outlined text-base'>person</span>
+              Tài khoản
+            </Link>
+            <Link
+              to={PATHS.RESALE_MARKET}
+              className='text-slate-400 hover:text-white px-6 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-colors'>
+              <span className='material-symbols-outlined text-base'>storefront</span>
+              Chợ vé Resale
             </Link>
           </li>
           <li>
@@ -197,8 +221,8 @@ const MyTicketPage = () => {
           <li>
             <Link
               to={PATHS.ADMIN_MY_EVENTS}
-              style={{ textDecoration: "none", color: "#ffffff" }}
-            >
+              className='text-slate-400 hover:text-white px-6 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-colors'>
+              <span className='material-symbols-outlined text-base'>event</span>
               Sự kiện của tôi
             </Link>
           </li>
@@ -337,6 +361,240 @@ const MyTicketPage = () => {
             <Link to={PATHS.HOME} className="btn">
               Mua vé ngay
             </Link>
+          </div>
+        )}
+
+        {/* ================================================================== */}
+        {/* 4. MODAL 1: HIGH-FIDELITY BOARDING PASS / DIGITAL PASS (QR MODAL) */}
+        {/* ================================================================== */}
+        {qrModalTicket && (
+          <div className='fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200'>
+            <div className='bg-[#181d28] border border-slate-700 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl relative'>
+              {/* Pass Header */}
+              <div className='bg-linear-to-r from-blue-900 to-indigo-900 p-6 relative border-b-2 border-dashed border-slate-600/80'>
+                <button
+                  onClick={() => setQrModalTicket(null)}
+                  className='absolute top-4 right-4 w-8 h-8 rounded-full bg-black/40 hover:bg-rose-600/80 text-white flex items-center justify-center transition-colors cursor-pointer'>
+                  <span className='material-symbols-outlined text-lg'>close</span>
+                </button>
+                <div className='text-xs uppercase tracking-widest text-blue-300 font-semibold mb-1'>
+                  Vé vào cổng điện tử
+                </div>
+                <h3 className='text-xl font-bold text-white line-clamp-1'>{qrModalTicket.eventName}</h3>
+                <div className='text-xs text-blue-200 mt-1 flex items-center gap-1'>
+                  <span className='material-symbols-outlined text-xs'>apartment</span>
+                  {qrModalTicket.venueName || 'Sân khấu chính'}
+                </div>
+              </div>
+
+              {/* QR Code Body */}
+              <div className='p-6 text-center bg-[#131722]'>
+                <div className='inline-block bg-white p-3.5 rounded-2xl shadow-xl mb-4'>
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt='Mã QR Vé' className='w-56 h-56 block mx-auto object-contain' />
+                  ) : (
+                    <div className='w-56 h-56 flex items-center justify-center text-slate-500 text-sm'>
+                      Đang sinh mã QR...
+                    </div>
+                  )}
+                </div>
+
+                {/* Ticket Code Tag */}
+                <div className='mb-4'>
+                  <div className='font-mono text-xl font-black tracking-widest text-emerald-400 bg-emerald-950/80 border border-emerald-500/40 inline-block px-4 py-1.5 rounded-xl shadow-inner'>
+                    {qrModalTicket.ticketCode}
+                  </div>
+                </div>
+
+                {/* Security Seal */}
+                <div className='flex items-center justify-center gap-1.5 text-xs text-blue-400 mb-5'>
+                  <span className='material-symbols-outlined text-base'>verified_user</span>
+                  Bảo mật HMAC-SHA256 • Chống vé giả mạo
+                </div>
+
+                {/* Details Table */}
+                <div className='bg-[#1a202d] rounded-xl border border-slate-800 p-3.5 text-xs text-slate-300 space-y-2 mb-5 text-left'>
+                  <div className='flex justify-between border-b border-slate-800/80 pb-1.5'>
+                    <span className='text-slate-400'>Hạng vé:</span>
+                    <strong className='text-white'>{qrModalTicket.ticketName}</strong>
+                  </div>
+                  <div className='flex justify-between border-b border-slate-800/80 pb-1.5'>
+                    <span className='text-slate-400'>Chỗ ngồi:</span>
+                    <strong className='text-emerald-400'>
+                      {qrModalTicket.seat ? `Ghế ${qrModalTicket.seat}` : 'Khu đứng (GA)'}
+                    </strong>
+                  </div>
+                  <div className='flex justify-between border-b border-slate-800/80 pb-1.5'>
+                    <span className='text-slate-400'>Thời gian:</span>
+                    <strong className='text-white'>{fmtDateTime(qrModalTicket.sessionStart)}</strong>
+                  </div>
+                  <div className='flex justify-between'>
+                    <span className='text-slate-400'>Trạng thái:</span>
+                    <strong className='text-blue-300'>{qrModalTicket.status || 'Hợp lệ'}</strong>
+                  </div>
+                </div>
+
+                <p className='text-[11px] text-slate-500 mb-5 leading-normal'>
+                  * Xuất trình mã QR trực tiếp trên màn hình này tại cổng kiểm soát. Hệ thống sẽ quét và xác minh vé tức
+                  thì.
+                </p>
+
+                {/* Modal Actions */}
+                <div className='flex gap-3'>
+                  <button
+                    onClick={() => window.print()}
+                    className='flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-xl text-sm flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/30 transition-all cursor-pointer'>
+                    <span className='material-symbols-outlined text-base'>print</span>
+                    In vé / Lưu PDF
+                  </button>
+                  <button
+                    onClick={() => setQrModalTicket(null)}
+                    className='bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors cursor-pointer'>
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================== */}
+        {/* 5. MODAL 2: BÁN LẠI VÉ TRÊN CHỢ RESALE (UC30 Integration)          */}
+        {/* ================================================================== */}
+        {resaleModalTicket && (
+          <div className='fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4'>
+            <div className='bg-[#181d28] border border-slate-700 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl'>
+              <div className='bg-linear-to-r from-amber-950 to-slate-900 p-5 border-b border-slate-800 flex items-center justify-between'>
+                <h3 className='text-lg font-bold text-amber-400 flex items-center gap-2'>
+                  <span className='material-symbols-outlined text-xl'>sell</span>
+                  Đăng bán lại vé trên Chợ thứ cấp
+                </h3>
+                <button
+                  onClick={() => setResaleModalTicket(null)}
+                  className='w-8 h-8 rounded-full bg-black/30 hover:bg-rose-600/80 text-white flex items-center justify-center transition-colors cursor-pointer'>
+                  <span className='material-symbols-outlined text-lg'>close</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitResale} className='p-6 space-y-4 max-h-[80vh] overflow-y-auto'>
+                <div className='bg-[#131722] p-4 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1.5'>
+                  <div>
+                    Sự kiện: <strong className='text-white'>{resaleModalTicket.eventName}</strong> (
+                    {resaleModalTicket.ticketName})
+                  </div>
+                  <div>
+                    Giá gốc:{' '}
+                    <strong className='text-white'>
+                      {Number(resaleModalTicket.ticketPrice).toLocaleString('vi-VN')} ₫
+                    </strong>
+                  </div>
+                  <div className='text-amber-400 font-medium pt-1'>
+                    * Giá bán tối đa:{' '}
+                    <strong>{Math.round((resaleModalTicket.ticketPrice || 0) * 1.1).toLocaleString('vi-VN')} ₫</strong>{' '}
+                    (110% giá gốc theo quy định chống phe vé).
+                  </div>
+                </div>
+
+                {/* Bundle Selection */}
+                {(() => {
+                  const group = sameGroupTickets(resaleModalTicket);
+                  return (
+                    <div className='bg-[#131722] p-4 rounded-xl border border-slate-800'>
+                      <div className='text-xs font-semibold text-slate-300 mb-2'>
+                        Chọn vé đăng bán cùng gói ({bundleIds.length}/{group.length}):
+                      </div>
+                      <div className='space-y-1.5 max-h-32 overflow-y-auto pr-1'>
+                        {group.map((t) => (
+                          <label
+                            key={t._id}
+                            className='flex items-center gap-2 text-xs text-slate-300 cursor-pointer hover:text-white'>
+                            <input
+                              type='checkbox'
+                              checked={bundleIds.includes(t._id)}
+                              onChange={() => toggleBundleTicket(t._id)}
+                              className='rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0'
+                            />
+                            <code className='text-emerald-400 font-mono'>{t.ticketCode}</code>
+                          </label>
+                        ))}
+                      </div>
+
+                      {bundleIds.length > 1 && (
+                        <div className='mt-3 pt-3 border-t border-slate-800'>
+                          <label className='flex items-center gap-2 text-xs text-slate-300 cursor-pointer'>
+                            <input
+                              type='checkbox'
+                              checked={!allowPartial}
+                              onChange={(e) => setAllowPartial(!e.target.checked)}
+                              className='rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0'
+                            />
+                            Không bán lẻ (người mua phải mua nguyên gói {bundleIds.length} vé)
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Resale Price Input */}
+                <div>
+                  <label className='block text-xs font-semibold text-slate-300 mb-1.5'>Giá bán lại mỗi vé (VNĐ):</label>
+                  <input
+                    type='number'
+                    value={resalePrice}
+                    onChange={(e) => setResalePrice(e.target.value)}
+                    placeholder='Nhập giá bán lại...'
+                    className='w-full bg-[#131722] border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500'
+                    required
+                  />
+                </div>
+
+                {/* Bank Account Info */}
+                <div className='bg-[#131722] p-4 rounded-xl border border-slate-800 space-y-3'>
+                  <div className='text-xs font-semibold text-slate-300'>
+                    Tài khoản nhận tiền (Sau khi vé được bán thành công):
+                  </div>
+                  {[
+                    { key: 'bankName', label: 'Tên ngân hàng', placeholder: 'VD: Vietcombank, Techcombank...' },
+                    { key: 'accountNo', label: 'Số tài khoản', placeholder: 'Chỉ gồm chữ số' },
+                    { key: 'accountHolder', label: 'Tên chủ tài khoản', placeholder: 'VD: NGUYEN VAN A' },
+                  ].map((f) => (
+                    <div key={f.key}>
+                      <label className='block text-[11px] text-slate-400 mb-1'>{f.label}</label>
+                      <input
+                        type='text'
+                        value={payoutBank[f.key]}
+                        onChange={(e) =>
+                          setPayoutBank((b) => ({
+                            ...b,
+                            [f.key]: f.key === 'accountHolder' ? e.target.value.toUpperCase() : e.target.value,
+                          }))
+                        }
+                        placeholder={f.placeholder}
+                        required
+                        className='w-full bg-[#0d1017] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500'
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Actions */}
+                <div className='flex gap-3 justify-end pt-2'>
+                  <button
+                    type='button'
+                    onClick={() => setResaleModalTicket(null)}
+                    className='bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-4 py-2 rounded-xl text-xs transition-colors cursor-pointer'>
+                    Huỷ
+                  </button>
+                  <button
+                    type='submit'
+                    disabled={resaleSubmitting}
+                    className='bg-amber-600 hover:bg-amber-500 text-white font-semibold px-5 py-2 rounded-xl text-xs shadow-md shadow-amber-600/30 transition-all cursor-pointer disabled:opacity-50'>
+                    {resaleSubmitting ? 'Đang xử lý...' : 'Xác nhận đăng bán'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
       </div>
