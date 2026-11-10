@@ -211,7 +211,6 @@ exports.create = ah(async (req, res) => {
   const city = str(payload.city || (venue ? venue.split(",").pop().trim() : "") || "Toàn quốc", 100, "thành phố");
   const form = parseForm(payload.customFormSchema);
   const markup = num(payload.maxResaleMarkupPct ?? 0, 0, 100, "maxResaleMarkupPct");
-  const refundHours = intIn(payload.refundDeadlineHours ?? 48, 0, 720, "refundDeadlineHours");
 
   let bannerUrl = payload.backgroundImage || payload.bannerUrl || "https://picsum.photos/seed/default/800/450";
   let thumbUrl = payload.eventImage || payload.thumbnailUrl;
@@ -238,8 +237,6 @@ exports.create = ah(async (req, res) => {
       end_time: new Date(Math.max(...sessionDefs.map((s) => s.end_time))),
       allow_resale: bool(payload.allowResale),
       max_resale_markup_pct: markup,
-      allow_refund: bool(payload.allowRefund),
-      refund_deadline_hours: refundHours,
       custom_form_schema: form || undefined,
       organizer_name: payload.organizerName || req.user.username,
       organizer_info: payload.organizerInfo || "",
@@ -318,8 +315,8 @@ exports.detail = ah(async (req, res) => {
       _id: o._id, title: o.title, description: o.description, organizerInfo: o.organizer_info, venueName: o.venue_name, city: o.city,
       bannerUrl: o.banner_url, thumbnailUrl: o.thumbnail_url, status: o.status, rejectionReason: o.rejection_reason,
       startTime: o.start_time, endTime: o.end_time, hasSeatMap: o.has_seat_map, hasLegalDoc: Boolean(o.legal_doc_url),
-      allowResale: o.allow_resale, maxResaleMarkupPct: o.max_resale_markup_pct, allowRefund: o.allow_refund,
-      refundDeadlineHours: o.refund_deadline_hours, customFormSchema: o.custom_form_schema || [],
+      allowResale: o.allow_resale, maxResaleMarkupPct: o.max_resale_markup_pct,
+      customFormSchema: o.custom_form_schema || [],
       sessions: sessions.map((s) => ({
         _id: s._id, name: s.name, startTime: s.start_time, endTime: s.end_time, status: s.status, seatMap: s.seat_map,
         tiers: tiers.filter((t) => t.session_id.equals(s._id)).map(tierToClient),
@@ -331,7 +328,7 @@ exports.detail = ah(async (req, res) => {
 });
 
 // ------------------------------------------------------------------ UC23: sửa / rút / huỷ
-const STRUCTURAL = ["title", "venueName", "city", "category", "allowResale", "maxResaleMarkupPct", "allowRefund", "refundDeadlineHours", "customFormSchema", "eventType"];
+const STRUCTURAL = ["title", "venueName", "city", "category", "allowResale", "maxResaleMarkupPct", "customFormSchema", "eventType"];
 
 // PUT /v1/organizer/events/:id
 exports.update = ah(async (req, res) => {
@@ -356,8 +353,6 @@ exports.update = ah(async (req, res) => {
   if (b.category !== undefined) set.category_id = (await findCategory(String(b.category)))._id;
   if (b.allowResale !== undefined) set.allow_resale = bool(b.allowResale);
   if (b.maxResaleMarkupPct !== undefined) set.max_resale_markup_pct = num(b.maxResaleMarkupPct, 0, 100, "maxResaleMarkupPct");
-  if (b.allowRefund !== undefined) set.allow_refund = bool(b.allowRefund);
-  if (b.refundDeadlineHours !== undefined) set.refund_deadline_hours = intIn(b.refundDeadlineHours, 0, 720, "refundDeadlineHours");
   if (b.eventType !== undefined) set.event_type = b.eventType === "online" ? "online" : "offline";
   if (b.customFormSchema !== undefined) set.custom_form_schema = parseForm(b.customFormSchema) || [];
   if (!Object.keys(set).length) throw httpError("Không có trường nào để cập nhật", 400);

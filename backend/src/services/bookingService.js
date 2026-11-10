@@ -260,6 +260,14 @@ async function createOrderHold({
 async function releaseOrder(filter, newStatus) {
   const order = await Order.findOneAndUpdate({ ...filter, status: "PENDING_PAYMENT" }, { status: newStatus }, { new: true });
   if (!order) return null;
+  if (order.order_type === "RESALE") {
+    // Đơn mua lại: không đụng kho / ghế, chỉ trả các tin bán về trạng thái đang bán
+    await ResaleListing.updateMany(
+      { _id: { $in: order.resale_listing_ids || [] }, status: "RESERVED", buyer_order_id: order._id },
+      { $set: { status: "ACTIVE" }, $unset: { reserved_until: 1, buyer_order_id: 1 } },
+    );
+    return order;
+  }
   await restoreStock(order.items_snapshot);
   await releaseSeats({ sessionId: order.session_id, seatIds: allSeatIds(order.items_snapshot), orderId: order._id });
   if (order.voucher_id) await Voucher.updateOne({ _id: order.voucher_id }, { $inc: { used_count: -1 } });
@@ -333,6 +341,11 @@ async function confirmPaymentAndIssueTickets({ orderId, buyerId, gateway = "VNPA
     paid_at: new Date(),
   });
 
+  if (claimed.order_type === "RESALE") {
+    const tickets = await issueResaleTickets(claimed);
+    return { order: claimed, payment, tickets };
+  }
+
   const seatIds = allSeatIds(claimed.items_snapshot);
   if (seatIds.length) {
     await Seat.updateMany(
@@ -364,6 +377,193 @@ async function confirmPaymentAndIssueTickets({ orderId, buyerId, gateway = "VNPA
   return { order: claimed, payment, tickets };
 }
 
+/* ===================== CHỢ VÉ BÁN LẠI (RESALE) ===================== */
+
+/** Kiểm tra câu trả lời form của BTC (custom_form_schema): bắt buộc / select hợp lệ. Trả về object đã làm sạch. */
+function validateFormAnswers(formSchema, answers) {
+  const fields = Array.isArray(formSchema) ? formSchema : [];
+  const input = answers && typeof answers === "object" && !Array.isArray(answers) ? answers : {};
+  const clean = {};
+  for (const f of fields) {
+    let v = input[f.key];
+    if (f.type === "checkbox") v = Boolean(v);
+    else if (v !== undefined && v !== null) v = String(v).trim().slice(0, 1000);
+    const empty = f.type === "checkbox" ? v !== true : !v;
+    if (f.required && empty) throw httpError(`Vui lòng trả lời câu hỏi: "${f.label}"`, 400);
+    if (f.type === "select" && v && !(f.options || []).includes(v)) {
+      throw httpError(`Lựa chọn không hợp lệ cho câu hỏi "${f.label}"`, 400);
+    }
+    if (f.type === "number" && v && !Number.isFinite(Number(v))) {
+      throw httpError(`Câu hỏi "${f.label}" phải là số`, 400);
+    }
+    if (v !== undefined && v !== "") clean[f.key] = v;
+  }
+  return clean;
+}
+
+/**
+ * GIỮ CHỖ ĐƠN MUA LẠI (10 phút) — giống luồng mua vé thường nhưng:
+ *  - Không áp dụng voucher.
+ *  - Không trừ kho / khoá ghế: chỉ chuyển các tin bán ACTIVE -> RESERVED (nguyên tử).
+ *  - Tiền chuyển vào tài khoản nền tảng; Admin chi trả cho người bán sau khi vé đã được cấp.
+ */
+async function createResaleOrderHold({ buyerId, eventId, listingIds, attendeeFormAnswers, voucherCode }) {
+  if (voucherCode && String(voucherCode).trim()) {
+    throw httpError("Vé bán lại không áp dụng mã giảm giá", 400);
+  }
+  const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map(String))];
+  if (!ids.length) throw httpError("Vui lòng chọn ít nhất 1 vé", 400);
+  if (ids.length > 10) throw httpError("Mỗi đơn mua lại tối đa 10 vé", 400);
+  if (!ids.every((id) => mongoose.isValidObjectId(id))) throw httpError("Mã tin bán không hợp lệ", 400);
+
+  const event = await Event.findById(eventId);
+  if (!event) throw httpError("Không tìm thấy sự kiện", 404);
+  if (!["APPROVED", "PUBLISHED"].includes(event.status)) throw httpError("Sự kiện không còn mở bán", 400);
+
+  const listings = await ResaleListing.find({ _id: { $in: ids } }).populate("ticket_id");
+  if (listings.length !== ids.length) throw httpError("Có vé không còn tồn tại", 404);
+
+  let sessionId = null;
+  for (const l of listings) {
+    const t = l.ticket_id;
+    const staleReserve = l.status === "RESERVED" && l.reserved_until && l.reserved_until < new Date();
+    if (l.status !== "ACTIVE" && !staleReserve) throw httpError("Có vé vừa được người khác giữ hoặc đã bán, vui lòng chọn lại", 409);
+    if (String(l.seller_id) === String(buyerId)) throw httpError("Không thể mua lại vé của chính mình", 400);
+    if (!t || t.status !== "LISTED_RESALE" || String(t.event_id) !== String(event._id)) {
+      throw httpError("Có vé không hợp lệ để mua", 409);
+    }
+    if (sessionId && String(t.session_id) !== String(sessionId)) {
+      throw httpError("Các vé trong một đơn phải cùng suất diễn", 400);
+    }
+    sessionId = t.session_id;
+  }
+
+  // Gói "không bán lẻ": phải mua đủ mọi vé còn bán trong gói
+  const wholeBundles = [...new Set(listings.filter((l) => l.allow_partial === false && l.bundle_code).map((l) => l.bundle_code))];
+  for (const code of wholeBundles) {
+    const members = await ResaleListing.find({
+      bundle_code: code,
+      $or: [{ status: "ACTIVE" }, { status: "RESERVED", reserved_until: { $lt: new Date() } }],
+    }).select("_id");
+    const missing = members.filter((m) => !ids.includes(String(m._id)));
+    if (missing.length) {
+      throw httpError(`Gói vé ${code} không bán lẻ: vui lòng chọn tất cả ${members.length} vé trong gói`, 400);
+    }
+  }
+
+  const session = await EventSession.findById(sessionId);
+  if (!session || session.status !== "SCHEDULED" || session.start_time <= new Date()) {
+    throw httpError("Suất diễn đã bắt đầu hoặc bị huỷ, không thể mua lại vé", 400);
+  }
+
+  const cleanAnswers = validateFormAnswers(event.custom_form_schema, attendeeFormAnswers);
+
+  const orderId = new mongoose.Types.ObjectId();
+  const expiresAt = new Date(Date.now() + HOLD_MS);
+
+  // Giữ từng tin bán nguyên tử; thất bại thì trả lại những tin đã giữ
+  const reserved = [];
+  for (const l of listings) {
+    const ok = await ResaleListing.findOneAndUpdate(
+      {
+        _id: l._id,
+        $or: [{ status: "ACTIVE" }, { status: "RESERVED", reserved_until: { $lt: new Date() } }],
+      },
+      { status: "RESERVED", reserved_until: expiresAt, buyer_order_id: orderId },
+    );
+    if (!ok) {
+      await ResaleListing.updateMany(
+        { _id: { $in: reserved }, status: "RESERVED", buyer_order_id: orderId },
+        { $set: { status: "ACTIVE" }, $unset: { reserved_until: 1, buyer_order_id: 1 } },
+      );
+      throw httpError("Có vé vừa được người khác giữ, vui lòng chọn lại", 409);
+    }
+    reserved.push(l._id);
+  }
+
+  try {
+    const tierNames = new Map(
+      (await TicketTier.find({ _id: { $in: listings.map((l) => l.ticket_id.tier_id) } }).select("name")).map((t) => [String(t._id), t.name]),
+    );
+    // Mỗi tin bán = 1 dòng snapshot (giá bán lại có thể khác nhau giữa các tin)
+    const snapshot = listings.map((l) => ({
+      tier_id: l.ticket_id.tier_id,
+      tier_name: `${tierNames.get(String(l.ticket_id.tier_id)) || "Vé"} (Bán lại)`,
+      unit_price: l.resale_price,
+      quantity: 1,
+      seat_ids: l.ticket_id.seat_id ? [l.ticket_id.seat_id] : [],
+    }));
+    const subtotal = listings.reduce((s, l) => s + l.resale_price, 0);
+
+    return await Order.create({
+      _id: orderId,
+      buyer_id: buyerId,
+      event_id: event._id,
+      session_id: sessionId,
+      order_code: genOrderCode(),
+      order_type: "RESALE",
+      resale_listing_ids: reserved,
+      items_snapshot: snapshot,
+      subtotal_amount: subtotal,
+      discount_amount: 0,
+      total_amount: subtotal,
+      status: "PENDING_PAYMENT",
+      lock_expires_at: expiresAt,
+      attendee_form_answers: cleanAnswers,
+    });
+  } catch (err) {
+    await ResaleListing.updateMany(
+      { _id: { $in: reserved }, status: "RESERVED", buyer_order_id: orderId },
+      { $set: { status: "ACTIVE" }, $unset: { reserved_until: 1, buyer_order_id: 1 } },
+    );
+    throw err;
+  }
+}
+
+/** Sau khi đơn RESALE đã PAID: huỷ vé cũ, cấp vé mới cho người mua, đánh dấu chờ chi trả cho người bán. */
+async function issueResaleTickets(order) {
+  const listings = await ResaleListing.find({ _id: { $in: order.resale_listing_ids || [] } });
+  const issued = [];
+  for (const l of listings) {
+    const sold = await ResaleListing.findOneAndUpdate(
+      { _id: l._id, status: "RESERVED", buyer_order_id: order._id },
+      {
+        $set: { status: "SOLD", buyer_order_id: order._id, payout_amount: l.resale_price, payout_status: "PENDING" },
+        $unset: { reserved_until: 1 },
+      },
+      { new: true },
+    );
+    if (!sold) {
+      // Tin đã bị huỷ ngoài luồng: tiền đã vào nhưng không cấp được vé -> Admin xử lý thủ công
+      console.warn(`[Resale] Đơn ${order.order_code}: không cấp được vé cho tin ${l._id} (trạng thái ${l.status})`);
+      continue;
+    }
+
+    const oldTicket = await Ticket.findOneAndUpdate(
+      { _id: l.ticket_id, status: "LISTED_RESALE" },
+      { status: "RESOLD_INVALID" },
+      { new: true },
+    );
+    if (!oldTicket) continue;
+
+    const code = `TK-RS-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    issued.push(
+      await Ticket.create({
+        order_id: order._id,
+        event_id: oldTicket.event_id,
+        session_id: oldTicket.session_id,
+        tier_id: oldTicket.tier_id,
+        seat_id: oldTicket.seat_id,
+        owner_id: order.buyer_id,
+        ticket_code: code,
+        qr_hash_signature: signTicket(code),
+        status: "VALID",
+      }),
+    );
+  }
+  return issued;
+}
+
 async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatInvoiceInfo }) {
   const order = await Order.findById(orderId);
   if (!order || order.buyer_id.toString() !== String(buyerId)) throw httpError("Không tìm thấy đơn hàng", 404);
@@ -377,64 +577,6 @@ async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatIn
   }
   await order.save();
   return order;
-}
-
-async function requestCustomerRefund({ orderId, buyerId, ticketId, reason }) {
-  const order = await Order.findById(orderId).populate("event_id").populate("session_id");
-  if (!order || order.buyer_id.toString() !== String(buyerId)) throw httpError("Không tìm thấy đơn hàng", 404);
-  if (order.status !== "PAID") throw httpError("Chỉ có thể yêu cầu hoàn tiền cho đơn đã thanh toán", 400);
-
-  const ev = order.event_id;
-  if (!ev) throw httpError("Không tìm thấy thông tin sự kiện của đơn hàng", 404);
-  if (ev.allow_refund === false) {
-    throw httpError("Sự kiện này không hỗ trợ hoàn/huỷ vé theo chính sách của Ban tổ chức", 400);
-  }
-
-  const startTime = order.session_id?.start_time || ev.start_time;
-  if (startTime) {
-    const now = Date.now();
-    const startMs = new Date(startTime).getTime();
-    if (now >= startMs) {
-      throw httpError("Sự kiện đã bắt đầu, không thể gửi yêu cầu hoàn tiền", 400);
-    }
-    const deadlineHours = Number(ev.refund_deadline_hours ?? 48);
-    if (deadlineHours > 0 && startMs - now < deadlineHours * 3600 * 1000) {
-      throw httpError(
-        `Đã quá thời hạn hoàn vé (phải gửi yêu cầu trước giờ diễn tối thiểu ${deadlineHours} giờ)`,
-        400,
-      );
-    }
-  }
-
-  let refundAmount = order.total_amount;
-  let targetTicket = null;
-
-  if (ticketId) {
-    targetTicket = await Ticket.findOne({ _id: ticketId, order_id: order._id, owner_id: buyerId });
-    if (!targetTicket) throw httpError("Không tìm thấy vé trong đơn hàng này", 404);
-    if (targetTicket.status !== "VALID") throw httpError(`Không thể hoàn vé ở trạng thái ${targetTicket.status}`, 400);
-
-    const existingReq = await RefundRequest.findOne({ ticket_id: targetTicket._id, status: { $in: ["PROCESSING", "COMPLETED"] } });
-    if (existingReq) throw httpError("Vé này đã có yêu cầu hoàn tiền đang được xử lý", 409);
-
-    const item = order.items_snapshot.find((it) => it.tier_id.toString() === targetTicket.tier_id.toString());
-    refundAmount = item ? item.unit_price : Math.round(order.total_amount / (order.items_snapshot.reduce((s, i) => s + i.quantity, 0) || 1));
-  } else {
-    const existingReq = await RefundRequest.findOne({ order_id: order._id, status: { $in: ["PROCESSING", "COMPLETED"] } });
-    if (existingReq) throw httpError("Đơn hàng này đã có yêu cầu hoàn tiền đang được xử lý", 409);
-  }
-
-  const refundRequest = await RefundRequest.create({
-    order_id: order._id,
-    ticket_id: targetTicket ? targetTicket._id : undefined,
-    user_id: buyerId,
-    refund_type: "USER_CANCEL",
-    refund_amount: refundAmount,
-    reason: reason || "Khách yêu cầu hoàn tiền",
-    status: "PROCESSING",
-  });
-
-  return refundRequest;
 }
 
 /**
@@ -460,7 +602,7 @@ async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị hu�
   let cancelledResaleCount = 0;
   if (eventTicketIds.length) {
     const resaleRes = await ResaleListing.updateMany(
-      { ticket_id: { $in: eventTicketIds }, status: "ACTIVE" },
+      { ticket_id: { $in: eventTicketIds }, status: { $in: ["ACTIVE", "RESERVED"] } },
       { $set: { status: "CANCELLED" } },
     );
     cancelledResaleCount = resaleRes.modifiedCount || 0;
@@ -549,8 +691,9 @@ function startExpirationJob(intervalMs = 30_000) {
 
 module.exports = {
   createOrderHold,
+  createResaleOrderHold,
+  validateFormAnswers,
   updateCheckoutInfo,
-  requestCustomerRefund,
   bulkRefundAndCancelEvent,
   releaseExpiredOrders,
   cancelPendingOrder,

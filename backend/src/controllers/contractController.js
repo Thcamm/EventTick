@@ -10,16 +10,23 @@ const clientIp = (req) => String(req.ip || req.socket?.remoteAddress || "").repl
 
 function contractToClient(c, { full = false } = {}) {
   const o = c.toObject ? c.toObject() : c;
+  const createdAt = o.createdAt || o.created_at || (o._id && typeof o._id.getTimestamp === "function" ? o._id.getTimestamp() : new Date());
+  const contractNumber = o.contract_number || (o._id ? `HD-${String(o._id).slice(-8).toUpperCase()}` : "");
   const out = {
     _id: o._id,
+    id: o._id ? String(o._id) : undefined,
+    contractNumber,
     eventId: o.event_id?._id || o.event_id,
-    eventTitle: o.event_id?.title,
+    eventTitle: o.event_id?.title || (typeof o.event_id === "object" ? o.event_id?.title : undefined),
     organizerId: o.organizer_id,
     commissionRatePct: o.commission_rate_pct,
     status: o.status,
     signedAt: o.signed_at,
     signerIp: o.signer_ip,
     hasSignedPdf: Boolean(o.signed_pdf_url),
+    signedPdfUrl: o.signed_pdf_url,
+    createdAt,
+    updatedAt: o.updatedAt || o.updated_at || createdAt,
   };
   if (full) out.termsHtml = o.contract_terms_html;
   return out;
@@ -148,8 +155,9 @@ exports.updateCommission = ah(async (req, res) => {
 exports.adminListContracts = ah(async (req, res) => {
   const filter = {};
   if (req.query.status) filter.status = String(req.query.status).toUpperCase();
-  const items = await EContract.find(filter).sort({ _id: -1 }).limit(100).populate("event_id", "title");
-  res.json({ success: true, items: items.map((c) => contractToClient(c)) });
+  const items = await EContract.find(filter).sort({ _id: -1 }).limit(100).populate("event_id", "title category start_date end_date banner_url status location");
+  const clientItems = items.map((c) => contractToClient(c));
+  res.json({ success: true, items: clientItems, contracts: clientItems, total: clientItems.length });
 });
 
 // GET /v1/admin/contracts/:id/pdf
@@ -163,20 +171,25 @@ exports.adminContractPdf = ah(async (req, res) => {
 
 // GET /v1/organizer/contracts — hợp đồng của tôi (lọc theo chủ sở hữu ở truy vấn)
 exports.myContracts = ah(async (req, res) => {
-  const items = await EContract.find({ organizer_id: req.user.id }).sort({ _id: -1 }).populate("event_id", "title");
-  res.json({ success: true, items: items.map((c) => contractToClient(c)) });
+  const userId = req.user?.id || req.user?._id;
+  const items = await EContract.find({ organizer_id: userId }).sort({ _id: -1 }).populate("event_id", "title category start_date end_date banner_url status location");
+  const clientItems = items.map((c) => contractToClient(c));
+  res.json({ success: true, items: clientItems, contracts: clientItems, total: clientItems.length });
 });
 
 // GET /v1/organizer/contracts/:id — xem điều khoản trước khi ký
 exports.myContractDetail = ah(async (req, res) => {
-  const c = await EContract.findOne({ _id: validId(req.params.id, "ID hợp đồng"), organizer_id: req.user.id }).populate("event_id", "title");
+  const userId = req.user?.id || req.user?._id;
+  const c = await EContract.findOne({ _id: validId(req.params.id, "ID hợp đồng"), organizer_id: userId }).populate("event_id");
   if (!c) throw httpError("Không tìm thấy hợp đồng", 404);
-  res.json({ success: true, contract: contractToClient(c, { full: true }) });
+  const data = contractToClient(c, { full: true });
+  res.json({ success: true, contract: data, item: data });
 });
 
 // GET /v1/organizer/contracts/:id/pdf — tải hợp đồng đã ký
 exports.myContractPdf = ah(async (req, res) => {
-  const c = await EContract.findOne({ _id: validId(req.params.id, "ID hợp đồng"), organizer_id: req.user.id });
+  const userId = req.user?.id || req.user?._id;
+  const c = await EContract.findOne({ _id: validId(req.params.id, "ID hợp đồng"), organizer_id: userId });
   if (!c) throw httpError("Không tìm thấy hợp đồng", 404);
   if (c.status !== "SIGNED") throw httpError("Hợp đồng chưa được ký", 409);
   return sendPrivate(res, c.signed_pdf_url);
@@ -188,6 +201,7 @@ exports.myContractPdf = ah(async (req, res) => {
  * Chuyển trạng thái nguyên tử: ký hai lần hoặc ký khi Admin vừa sửa hoa hồng đều bị chặn.
  */
 exports.sign = ah(async (req, res) => {
+  const userId = req.user?.id || req.user?._id;
   const id = validId(req.params.id, "ID hợp đồng");
   if (req.body?.agree !== true) throw httpError("Bạn phải đồng ý với điều khoản (agree: true)", 400);
 
@@ -198,13 +212,13 @@ exports.sign = ah(async (req, res) => {
   if (png.length > 1024 * 1024) throw httpError("Ảnh chữ ký quá lớn (tối đa 1MB)", 400);
   if (png.length < 300) throw httpError("Chữ ký trống hoặc quá nhỏ", 400);
 
-  const contract = await EContract.findOne({ _id: id, organizer_id: req.user.id });
+  const contract = await EContract.findOne({ _id: id, organizer_id: userId });
   if (!contract) throw httpError("Không tìm thấy hợp đồng", 404);
   if (contract.status !== "WAITING_SIGN") throw httpError(`Hợp đồng đang ở trạng thái ${contract.status}`, 409);
 
   const [event, profile] = await Promise.all([
     Event.findById(contract.event_id),
-    OrganizerProfile.findOne({ user_id: req.user.id }),
+    OrganizerProfile.findOne({ user_id: userId }),
   ]);
   if (!event || event.status !== "APPROVED") throw httpError("Sự kiện không ở trạng thái chờ ký", 409);
   if (!profile || profile.kyc_status !== "VERIFIED") throw httpError("Hồ sơ KYC không còn hiệu lực", 403);
@@ -251,9 +265,10 @@ exports.sign = ah(async (req, res) => {
 
 // PUT /v1/organizer/contracts/:id/reject  { reason } — organizer từ chối ký
 exports.rejectContract = ah(async (req, res) => {
+  const userId = req.user?.id || req.user?._id;
   const reason = str(req.body?.reason, 1000, "lý do từ chối ký", { required: false });
   const c = await EContract.findOneAndUpdate(
-    { _id: validId(req.params.id, "ID hợp đồng"), organizer_id: req.user.id, status: "WAITING_SIGN" },
+    { _id: validId(req.params.id, "ID hợp đồng"), organizer_id: userId, status: "WAITING_SIGN" },
     { status: "REJECTED" },
     { new: true },
   );

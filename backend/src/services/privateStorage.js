@@ -77,7 +77,12 @@ function sendPrivate(res, ref) {
   const p = parseRef(ref);
   if (!p) return res.status(404).json({ success: false, message: "Không có tài liệu" });
   if (p.provider === "cloudinary") {
-    return res.json({ success: true, url: signedUrl(ref), expiresInSeconds: 300 });
+    const url = signedUrl(ref);
+    const accept = String(res.req?.headers?.accept || "");
+    if (accept.includes("text/html") || accept.includes("application/pdf") || res.req?.query?.redirect === "true") {
+      return res.redirect(url);
+    }
+    return res.json({ success: true, url, expiresInSeconds: 300 });
   }
   const full = path.join(LOCAL_DIR, p.file);
   if (!fs.existsSync(full)) return res.status(404).json({ success: false, message: "Không tìm thấy tệp" });

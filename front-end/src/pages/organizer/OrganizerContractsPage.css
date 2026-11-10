@@ -417,3 +417,49 @@
   align-items: center;
   min-height: 400px;
 }
+
+.btn-download-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #238636;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: background 0.2s;
+}
+
+.btn-download-pdf:hover {
+  background: #2ea043;
+}
+
+.contract-html-content {
+  font-size: 13px;
+  color: #c9d1d9;
+  line-height: 1.6;
+}
+
+.contract-html-content h1,
+.contract-html-content h2,
+.contract-html-content h3,
+.contract-html-content h4 {
+  color: #f0f6fc;
+  margin: 12px 0 6px;
+}
+
+.contract-html-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.contract-html-content th,
+.contract-html-content td {
+  border: 1px solid #30363d;
+  padding: 8px;
+}

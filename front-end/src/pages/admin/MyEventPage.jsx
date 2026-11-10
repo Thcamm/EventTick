@@ -5,6 +5,37 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { PATHS } from "@/routes/paths";
 
+const EVENT_STATUS_MAP = {
+  DRAFT: {
+    label: "Bản nháp",
+    color: "#94a3b8",
+  },
+  PENDING: {
+    label: "Chờ Admin duyệt",
+    color: "#fbbf24",
+  },
+  APPROVED: {
+    label: "Chờ ký hợp đồng",
+    color: "#38bdf8",
+  },
+  PUBLISHED: {
+    label: "Đang mở bán",
+    color: "#4ade80",
+  },
+  CANCELLED: {
+    label: "Đã huỷ",
+    color: "#ef4444",
+  },
+  ENDED: {
+    label: "Đã kết thúc",
+    color: "#9ca3af",
+  },
+  REJECTED: {
+    label: "Bị từ chối",
+    color: "#f87171",
+  },
+};
+
 const MyEventPage = () => {
   const { user } = useAuth();
   const [events, setEvents] = useState([]);
@@ -99,11 +130,15 @@ const MyEventPage = () => {
               </thead>
               <tbody>
                 {events.map((event, index) => {
-                  const status = (event.status || "PENDING").toUpperCase();
-                  const isApproved = status === "APPROVED";
+                  const status = (event.status || "DRAFT").toUpperCase();
+                  const statusConfig = EVENT_STATUS_MAP[status] || {
+                    label: status,
+                    color: "#94a3b8",
+                  };
+                  const statusLabel = statusConfig.label;
+                  const statusColor = statusConfig.color;
                   const isRejected = status === "REJECTED";
-                  const statusLabel = isApproved ? "Đã phê duyệt" : isRejected ? "Bị từ chối" : "Chờ Admin duyệt";
-                  const statusColor = isApproved ? "#4ade80" : isRejected ? "#f87171" : "#fbbf24";
+                  const isApproved = status === "APPROVED";
                   const imageSrc = event.thumbnailUrl || event.bannerUrl || event.eventImage;
 
                   return (
@@ -138,6 +173,25 @@ const MyEventPage = () => {
                         }}>
                           {statusLabel}
                         </span>
+                        {isApproved && (
+                          <div style={{ marginTop: "6px" }}>
+                            <Link
+                              to={PATHS.ORGANIZER_CONTRACTS}
+                              style={{
+                                display: "inline-block",
+                                padding: "2px 8px",
+                                backgroundColor: "#10b981",
+                                color: "#fff",
+                                borderRadius: "4px",
+                                fontSize: "11px",
+                                textDecoration: "none",
+                                fontWeight: 600,
+                              }}
+                            >
+                              ✍️ Ký hợp đồng ngay
+                            </Link>
+                          </div>
+                        )}
                         {isRejected && event.rejectionReason && (
                           <div style={{ fontSize: "11px", color: "#f87171", marginTop: "4px" }}>
                             Lý do: {event.rejectionReason}

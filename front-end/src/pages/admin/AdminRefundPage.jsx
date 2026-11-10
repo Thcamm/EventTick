@@ -5,7 +5,6 @@ import "./AdminRefundPage.css";
 
 export default function AdminRefundPage() {
   const [refunds, setRefunds] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("PROCESSING");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -23,7 +22,6 @@ export default function AdminRefundPage() {
     try {
       setLoading(true);
       const params = { page, limit: 15 };
-      if (statusFilter) params.status = statusFilter;
 
       const res = await api.get("/admin/refunds", { params });
       if (res.data?.success) {
@@ -36,43 +34,11 @@ export default function AdminRefundPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page]);
 
   useEffect(() => {
     fetchRefunds();
   }, [fetchRefunds]);
-
-  const handleApprove = async (id) => {
-    if (!window.confirm("Bạn có chắc chắn muốn phê duyệt hoàn tiền này? Tiền sẽ được hoàn và ghế/vé sẽ được tự động giải phóng.")) return;
-    try {
-      setActionLoading(id);
-      const res = await api.put(`/admin/refunds/${id}/approve`);
-      if (res.data?.success) {
-        setToast({ type: "success", message: "Đã phê duyệt hoàn tiền thành công" });
-        fetchRefunds();
-      }
-    } catch (err) {
-      setToast({ type: "error", message: err.response?.data?.message || "Không thể duyệt hoàn tiền" });
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleReject = async (id) => {
-    if (!window.confirm("Bạn có chắc chắn muốn từ chối yêu cầu hoàn tiền này?")) return;
-    try {
-      setActionLoading(id);
-      const res = await api.put(`/admin/refunds/${id}/reject`);
-      if (res.data?.success) {
-        setToast({ type: "success", message: "Đã từ chối yêu cầu hoàn tiền" });
-        fetchRefunds();
-      }
-    } catch (err) {
-      setToast({ type: "error", message: err.response?.data?.message || "Không thể từ chối yêu cầu" });
-    } finally {
-      setActionLoading(null);
-    }
-  };
 
   const handleBulkRefundSubmit = async (e) => {
     e.preventDefault();
@@ -113,9 +79,9 @@ export default function AdminRefundPage() {
             <div className="header-breadcrumbs">
               <Link to="/admin/dashboard">Admin Dashboard</Link> <span>/</span> <span>Hoàn tiền vé (UC43)</span>
             </div>
-            <h1>Quản lý Hoàn tiền & Huỷ sự kiện hàng loạt</h1>
+            <h1>Hoàn tiền khi huỷ sự kiện</h1>
             <p className="subtitle">
-              Xem xét xử lý các khiếu nại hoàn tiền vé online, tự động thu hồi mã vé HMAC, giải phóng ghế vào kho vé và kích hoạt quy trình hoàn tiền hàng loạt khi sự kiện bị huỷ.
+              EventTick không hỗ trợ hoàn vé lẻ. Tiền chỉ được hoàn khi sự kiện bị huỷ: hệ thống thu hồi toàn bộ vé, huỷ tin bán lại và ghi nhận hoàn 100% cho người mua.
             </p>
           </div>
           <button className="btn-bulk-refund-open" onClick={() => setShowBulkModal(true)}>
@@ -130,48 +96,9 @@ export default function AdminRefundPage() {
           </div>
         )}
 
-        {/* Filter bar */}
         <div className="filter-card">
           <div className="filter-group">
-            <label>Trạng thái yêu cầu:</label>
-            <div className="filter-tabs">
-              <button
-                className={statusFilter === "PROCESSING" ? "tab-active" : ""}
-                onClick={() => {
-                  setStatusFilter("PROCESSING");
-                  setPage(1);
-                }}
-              >
-                Chờ xử lý (PROCESSING)
-              </button>
-              <button
-                className={statusFilter === "COMPLETED" ? "tab-active" : ""}
-                onClick={() => {
-                  setStatusFilter("COMPLETED");
-                  setPage(1);
-                }}
-              >
-                Đã hoàn tiền (COMPLETED)
-              </button>
-              <button
-                className={statusFilter === "REJECTED" ? "tab-active" : ""}
-                onClick={() => {
-                  setStatusFilter("REJECTED");
-                  setPage(1);
-                }}
-              >
-                Đã từ chối (REJECTED)
-              </button>
-              <button
-                className={statusFilter === "" ? "tab-active" : ""}
-                onClick={() => {
-                  setStatusFilter("");
-                  setPage(1);
-                }}
-              >
-                Tất cả ({total})
-              </button>
-            </div>
+            <label>Tổng số đơn đã hoàn: <strong>{total}</strong></label>
           </div>
         </div>
 
@@ -190,9 +117,9 @@ export default function AdminRefundPage() {
                     <th>Sự kiện / Mã đơn</th>
                     <th>Mã vé / Loại</th>
                     <th>Số tiền hoàn</th>
-                    <th>Lý do khiếu nại</th>
+                    <th>Lý do huỷ</th>
                     <th>Trạng thái</th>
-                    <th style={{ textAlign: "right" }}>Thao tác</th>
+                    <th style={{ textAlign: "right" }}>Ngày hoàn</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -215,7 +142,7 @@ export default function AdminRefundPage() {
                         ) : (
                           <span className="order-level-tag">Toàn bộ đơn hàng</span>
                         )}
-                        <div className="type-sub">{r.refundType}</div>
+                        <div className="type-sub">Huỷ sự kiện</div>
                       </td>
                       <td className="amount-cell">
                         <strong>{formatVnd(r.refundAmount)}</strong>
@@ -227,45 +154,14 @@ export default function AdminRefundPage() {
                         </div>
                       </td>
                       <td>
-                        <span
-                          className={`status-pill ${
-                            r.status === "COMPLETED"
-                              ? "active"
-                              : r.status === "PROCESSING"
-                              ? "urgent"
-                              : "blocked"
-                          }`}
-                        >
-                          {r.status === "COMPLETED"
-                            ? "Đã hoàn tất"
-                            : r.status === "PROCESSING"
-                            ? "Chờ phê duyệt"
-                            : "Đã từ chối"}
+                        <span className={`status-pill ${r.status === "COMPLETED" ? "active" : "blocked"}`}>
+                          {r.status === "COMPLETED" ? "Đã hoàn tất" : r.status}
                         </span>
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        {r.status === "PROCESSING" ? (
-                          <div className="action-buttons-cell">
-                            <button
-                              className="btn-approve"
-                              disabled={actionLoading === r.id}
-                              onClick={() => handleApprove(r.id)}
-                            >
-                              Duyệt hoàn
-                            </button>
-                            <button
-                              className="btn-delete"
-                              disabled={actionLoading === r.id}
-                              onClick={() => handleReject(r.id)}
-                            >
-                              Từ chối
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="dim-text">
-                            {r.processedAt ? new Date(r.processedAt).toLocaleDateString("vi-VN") : "Đã xong"}
-                          </span>
-                        )}
+                        <span className="dim-text">
+                          {r.processedAt ? new Date(r.processedAt).toLocaleDateString("vi-VN") : "—"}
+                        </span>
                       </td>
                     </tr>
                   ))}

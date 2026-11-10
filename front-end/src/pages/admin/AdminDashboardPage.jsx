@@ -147,7 +147,7 @@ const AdminDashboardPage = () => {
           <div className="panel-header-row">
             <div>
               <h2>Báo Cáo Doanh Thu Bán Vé Trực Tuyến Năm {year}</h2>
-              <p className="panel-desc">Chi tiết GMV, phí hoa hồng nền tảng và số tiền hoàn vé từng tháng</p>
+              <p className="panel-desc">Chi tiết GMV, phí hoa hồng nền tảng và số tiền hoàn do huỷ sự kiện từng tháng</p>
             </div>
             <div className="year-selector">
               <label>Năm:</label>

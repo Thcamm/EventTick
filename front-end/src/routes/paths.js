@@ -11,6 +11,8 @@ export const PATHS = {
   EVENT_SEATS: "/event/seats/:eventId",
   SEARCH: "/search",
   RESALE_MARKET: "/resale",
+  RESALE_EVENT: "/resale/:eventId",
+  RESALE_BUNDLE: "/resale/:eventId/:bundleCode",
 
   // User
   USER_TICKETS: "/user/tickets",
@@ -39,6 +41,7 @@ export const PATHS = {
   ADMIN_USERS: "/admin/users",
   ADMIN_SETTLEMENTS: "/admin/settlements",
   ADMIN_REFUNDS: "/admin/refunds",
+  ADMIN_RESALE_PAYOUTS: "/admin/resale-payouts",
 
   // Payment
   PAYMENT: "/payment/:orderId",

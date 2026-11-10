@@ -16,10 +16,17 @@ const MyTicketPage = () => {
   const [resaleModalTicket, setResaleModalTicket] = useState(null);
   const [resalePrice, setResalePrice] = useState("");
   const [resaleSubmitting, setResaleSubmitting] = useState(false);
+  const [payoutBank, setPayoutBank] = useState({ bankName: "", accountNo: "", accountHolder: "" });
+  const [bundleIds, setBundleIds] = useState([]); // các vé cùng hạng/suất được đăng chung 1 gói
+  const [allowPartial, setAllowPartial] = useState(true); // true = người mua được mua lẻ
+  const [, setTick] = useState(0); // đếm ngược giữ chỗ
 
-  const [refundModalTicket, setRefundModalTicket] = useState(null);
-  const [refundReason, setRefundReason] = useState("");
-  const [refundSubmitting, setRefundSubmitting] = useState(false);
+  // Cập nhật mỗi giây khi có vé đang được người khác giữ chỗ thanh toán
+  useEffect(() => {
+    if (!tickets.some((t) => t.resale?.status === "RESERVED")) return undefined;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [tickets]);
 
   const fetchTickets = async () => {
     try {
@@ -55,14 +62,71 @@ const MyTicketPage = () => {
     }
   };
 
+  // Vé còn dùng được, cùng sự kiện + hạng vé + suất diễn với vé đang chọn (có thể đăng chung 1 gói)
+  const sameGroupTickets = (ticket) =>
+    tickets.filter(
+      (t) =>
+        t.rawStatus === "VALID" &&
+        t.validity === "UPCOMING" &&
+        t.eventId === ticket.eventId &&
+        t.ticketName === ticket.ticketName &&
+        String(t.sessionStart) === String(ticket.sessionStart),
+    );
+
   const handleOpenResaleModal = (ticket) => {
     setResaleModalTicket(ticket);
     setResalePrice(ticket.ticketPrice || "");
+    setBundleIds([ticket._id]);
+    setAllowPartial(true);
   };
 
-  const handleOpenRefundModal = (ticket) => {
-    setRefundModalTicket(ticket);
-    setRefundReason("");
+  const toggleBundleTicket = (id) =>
+    setBundleIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+
+  const formatCountdown = (until) => {
+    const s = Math.max(0, Math.round((new Date(until) - Date.now()) / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  const fmtDateTime = (d) =>
+    d
+      ? new Date(d).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })
+      : "—";
+
+  // Trạng thái hiển thị: ưu tiên hạn vé và trạng thái bán lại
+  const getStatusBadge = (ticket) => {
+    const r = ticket.resale;
+    if (ticket.rawStatus === "RESOLD_INVALID") {
+      return r?.payoutStatus === "PAID"
+        ? { text: "Đã bán lại · Đã nhận tiền", bg: "#064e3b", color: "#34d399" }
+        : { text: "Đã bán lại · Chờ nhận tiền", bg: "#1e3a8a", color: "#93c5fd" };
+    }
+    if (ticket.rawStatus === "LISTED_RESALE") {
+      if (r?.status === "RESERVED") {
+        return { text: `Có người đang thanh toán (${formatCountdown(r.reservedUntil)})`, bg: "#7f1d1d", color: "#fca5a5" };
+      }
+      if (ticket.validity === "EXPIRED" || ticket.validity === "ONGOING" || ticket.validity === "CANCELLED") {
+        return { text: "Đang bán lại · Quá hạn", bg: "#451a03", color: "#fbbf24" };
+      }
+      return { text: "Đang bán lại", bg: "#451a03", color: "#fbbf24" };
+    }
+    if (ticket.rawStatus === "USED") return { text: "Đã check-in", bg: "#1e293b", color: "#94a3b8" };
+    if (ticket.rawStatus === "REFUNDED") return { text: "Đã hoàn tiền", bg: "#451a03", color: "#fbbf24" };
+    if (ticket.validity === "CANCELLED") return { text: "Sự kiện bị huỷ", bg: "#7f1d1d", color: "#fca5a5" };
+    if (ticket.validity === "EXPIRED") return { text: "Đã hết hạn", bg: "#27272a", color: "#a1a1aa" };
+    if (ticket.validity === "ONGOING") return { text: "Đang diễn ra", bg: "#0c4a6e", color: "#7dd3fc" };
+    return { text: "Chưa sử dụng", bg: "#064e3b", color: "#34d399" };
+  };
+
+  const cancelListing = async (ticket) => {
+    if (!ticket.resale?.listingId) return;
+    if (!window.confirm("Huỷ đăng bán vé này? Vé sẽ trở về trạng thái chưa sử dụng.")) return;
+    try {
+      await axiosInstance.delete(`/resale/listings/${ticket.resale.listingId}`);
+      fetchTickets();
+    } catch (err) {
+      alert(err.response?.data?.message || "Không huỷ được tin bán.");
+    }
   };
 
   const handleSubmitResale = async (e) => {
@@ -76,42 +140,32 @@ const MyTicketPage = () => {
       alert(`Giá bán lại không được vượt quá 110% giá gốc (${maxPrice.toLocaleString()} ₫) để tuân thủ quy định chống phe vé.`);
       return;
     }
+    if (!payoutBank.bankName.trim() || !payoutBank.accountHolder.trim() || !/^[0-9]{6,20}$/.test(payoutBank.accountNo.trim())) {
+      alert("Vui lòng nhập đủ tài khoản nhận tiền (số tài khoản gồm 6–20 chữ số).");
+      return;
+    }
 
     try {
       setResaleSubmitting(true);
+      if (!bundleIds.length) {
+        alert("Vui lòng chọn ít nhất 1 vé để đăng bán.");
+        return;
+      }
       await axiosInstance.post("/resale/listings", {
-        ticketId: resaleModalTicket._id,
+        ticketIds: bundleIds,
+        allowPartial,
         resalePrice: Number(resalePrice),
+        bankName: payoutBank.bankName.trim(),
+        accountNo: payoutBank.accountNo.trim(),
+        accountHolder: payoutBank.accountHolder.trim(),
       });
-      alert("Đăng bán lại vé thành công lên Chợ vé!");
+      alert("Đăng bán lại vé thành công lên Chợ vé! Khi có người mua, EventTick sẽ chuyển tiền vào tài khoản bạn đã khai báo.");
       setResaleModalTicket(null);
       fetchTickets();
     } catch (err) {
       alert(err.response?.data?.message || "Không thể đăng bán vé.");
     } finally {
       setResaleSubmitting(false);
-    }
-  };
-
-  const handleSubmitRefund = async (e) => {
-    e.preventDefault();
-    if (!refundReason.trim()) {
-      alert("Vui lòng nhập lý do hoàn tiền!");
-      return;
-    }
-    try {
-      setRefundSubmitting(true);
-      await axiosInstance.post(`/booking/orders/${refundModalTicket.orderId}/refund`, {
-        ticketId: refundModalTicket._id,
-        reason: refundReason,
-      });
-      alert("Đã gửi yêu cầu hoàn tiền thành công! Quản trị viên sẽ xét duyệt trong thời gian sớm nhất.");
-      setRefundModalTicket(null);
-      fetchTickets();
-    } catch (err) {
-      alert(err.response?.data?.message || "Không thể gửi yêu cầu hoàn tiền.");
-    } finally {
-      setRefundSubmitting(false);
     }
   };
 
@@ -164,6 +218,7 @@ const MyTicketPage = () => {
                 <th>Mã vé</th>
                 <th>Sự kiện</th>
                 <th>Hạng vé</th>
+                <th>Suất diễn</th>
                 <th>Giá vé</th>
                 <th>Trạng thái</th>
                 <th>Hành động</th>
@@ -171,7 +226,9 @@ const MyTicketPage = () => {
             </thead>
             <tbody>
               {tickets.map((ticket, index) => {
-                const isValid = ticket.rawStatus === "VALID";
+                const canResale = ticket.rawStatus === "VALID" && ticket.validity === "UPCOMING";
+                const badge = getStatusBadge(ticket);
+                const canCancelListing = ticket.rawStatus === "LISTED_RESALE" && ticket.resale?.status === "ACTIVE";
                 return (
                   <tr key={index} style={{ borderBottom: "1px solid #333" }}>
                     <td>
@@ -188,6 +245,18 @@ const MyTicketPage = () => {
                       </Link>
                     </td>
                     <td>{ticket.ticketName}</td>
+                    <td style={{ fontSize: "13px" }}>
+                      {ticket.sessionStart ? (
+                        <>
+                          <div>{fmtDateTime(ticket.sessionStart)}</div>
+                          {ticket.sessionEnd && (
+                            <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Kết thúc: {fmtDateTime(ticket.sessionEnd)}</div>
+                          )}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>{Number(ticket.ticketPrice).toLocaleString()} ₫</td>
                     <td>
                       <span style={{
@@ -195,11 +264,16 @@ const MyTicketPage = () => {
                         borderRadius: "4px",
                         fontSize: "12px",
                         fontWeight: 600,
-                        background: isValid ? "#064e3b" : ticket.rawStatus === "USED" ? "#1e293b" : "#451a03",
-                        color: isValid ? "#34d399" : ticket.rawStatus === "USED" ? "#94a3b8" : "#fbbf24",
+                        background: badge.bg,
+                        color: badge.color,
                       }}>
-                        {ticket.status}
+                        {badge.text}
                       </span>
+                      {ticket.resale?.resalePrice && ["LISTED_RESALE", "RESOLD_INVALID"].includes(ticket.rawStatus) && (
+                        <div style={{ color: "#a1a1aa", fontSize: "12px", marginTop: "4px" }}>
+                          Giá bán: {Number(ticket.resale.resalePrice).toLocaleString()} ₫
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: "8px" }}>
@@ -218,37 +292,37 @@ const MyTicketPage = () => {
                           📱 Vé QR
                         </button>
 
-                        {isValid && (
-                          <>
-                            <button
-                              onClick={() => handleOpenResaleModal(ticket)}
-                              style={{
-                                background: "#d97706",
-                                color: "#fff",
-                                border: "none",
-                                padding: "6px 10px",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                              }}
-                            >
-                              Bán lại
-                            </button>
-                            <button
-                              onClick={() => handleOpenRefundModal(ticket)}
-                              style={{
-                                background: "#dc2626",
-                                color: "#fff",
-                                border: "none",
-                                padding: "6px 10px",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                              }}
-                            >
-                              Hoàn vé
-                            </button>
-                          </>
+                        {canResale && (
+                          <button
+                            onClick={() => handleOpenResaleModal(ticket)}
+                            style={{
+                              background: "#d97706",
+                              color: "#fff",
+                              border: "none",
+                              padding: "6px 10px",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                            }}
+                          >
+                            Bán lại
+                          </button>
+                        )}
+                        {canCancelListing && (
+                          <button
+                            onClick={() => cancelListing(ticket)}
+                            style={{
+                              background: "#3f3f46",
+                              color: "#fff",
+                              border: "none",
+                              padding: "6px 10px",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                            }}
+                          >
+                            Huỷ bán
+                          </button>
                         )}
                       </div>
                     </td>
@@ -369,6 +443,34 @@ const MyTicketPage = () => {
             </p>
 
             <form onSubmit={handleSubmitResale}>
+              {(() => {
+                const group = sameGroupTickets(resaleModalTicket);
+                return (
+                  <div style={{ marginBottom: "16px", padding: "12px", background: "#27272a", borderRadius: "8px" }}>
+                    <div style={{ fontSize: "13px", color: "#e4e4e7", fontWeight: 600, marginBottom: "8px" }}>
+                      Chọn vé đăng bán ({bundleIds.length}/{group.length})
+                    </div>
+                    {group.map((t) => (
+                      <label key={t._id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#d4d4d8", marginBottom: "4px", cursor: "pointer" }}>
+                        <input type="checkbox" checked={bundleIds.includes(t._id)} onChange={() => toggleBundleTicket(t._id)} />
+                        <code style={{ color: "#4ade80" }}>{t.ticketCode}</code>
+                      </label>
+                    ))}
+                    {bundleIds.length > 1 && (
+                      <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #3f3f46" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#e4e4e7", cursor: "pointer" }}>
+                          <input type="checkbox" checked={!allowPartial} onChange={(e) => setAllowPartial(!e.target.checked)} />
+                          Không bán lẻ (người mua phải mua hết {bundleIds.length} vé)
+                        </label>
+                        <div style={{ fontSize: "12px", color: "#a1a1aa", marginTop: "4px" }}>
+                          {allowPartial ? "Người mua có thể mua từng vé trong gói." : "Gói sẽ chỉ bán nguyên cả gói."}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div style={{ marginBottom: "16px" }}>
                 <label style={{ display: "block", fontSize: "13px", color: "#e4e4e7", marginBottom: "6px" }}>
                   Giá bán lại mong muốn (VNĐ):
@@ -389,6 +491,46 @@ const MyTicketPage = () => {
                   }}
                   required
                 />
+              </div>
+
+              <div style={{ marginBottom: "16px", padding: "12px", background: "#27272a", borderRadius: "8px" }}>
+                <div style={{ fontSize: "13px", color: "#e4e4e7", fontWeight: 600, marginBottom: "4px" }}>
+                  Tài khoản nhận tiền khi bán thành công
+                </div>
+                <div style={{ fontSize: "12px", color: "#a1a1aa", marginBottom: "10px" }}>
+                  Người mua thanh toán cho EventTick, sau đó quản trị viên chuyển tiền vào tài khoản này.
+                </div>
+                {[
+                  { key: "bankName", label: "Ngân hàng", placeholder: "VD: Vietcombank", mode: "text" },
+                  { key: "accountNo", label: "Số tài khoản", placeholder: "Chỉ gồm chữ số", mode: "numeric" },
+                  { key: "accountHolder", label: "Chủ tài khoản", placeholder: "VD: NGUYEN VAN A", mode: "text" },
+                ].map((f) => (
+                  <div key={f.key} style={{ marginBottom: "8px" }}>
+                    <label style={{ display: "block", fontSize: "12px", color: "#d4d4d8", marginBottom: "4px" }}>{f.label}</label>
+                    <input
+                      type="text"
+                      inputMode={f.mode}
+                      value={payoutBank[f.key]}
+                      onChange={(e) =>
+                        setPayoutBank((b) => ({
+                          ...b,
+                          [f.key]: f.key === "accountHolder" ? e.target.value.toUpperCase() : e.target.value,
+                        }))
+                      }
+                      placeholder={f.placeholder}
+                      required
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        background: "#18181b",
+                        border: "1px solid #52525b",
+                        borderRadius: "6px",
+                        color: "#fff",
+                        fontSize: "14px",
+                      }}
+                    />
+                  </div>
+                ))}
               </div>
 
               <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
@@ -427,89 +569,6 @@ const MyTicketPage = () => {
         </div>
       )}
 
-      {/* MODAL 3: YÊU CẦU HOÀN VÉ (REFUND) */}
-      {refundModalTicket && (
-        <div style={{
-          position: "fixed",
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.85)",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          zIndex: 1000,
-        }}>
-          <div style={{
-            background: "#18181b",
-            border: "1px solid #3f3f46",
-            borderRadius: "12px",
-            padding: "24px",
-            maxWidth: "420px",
-            width: "90%",
-          }}>
-            <h3 style={{ color: "#f4f4f5", marginBottom: "8px" }}>Yêu cầu hoàn trả vé</h3>
-            <p style={{ color: "#a1a1aa", fontSize: "13px", marginBottom: "16px" }}>
-              Mã vé: <strong>{refundModalTicket.ticketCode}</strong> - {refundModalTicket.eventName}
-            </p>
-
-            <form onSubmit={handleSubmitRefund}>
-              <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", fontSize: "13px", color: "#e4e4e7", marginBottom: "6px" }}>
-                  Lý do hoàn vé:
-                </label>
-                <textarea
-                  rows="3"
-                  value={refundReason}
-                  onChange={(e) => setRefundReason(e.target.value)}
-                  placeholder="Vui lòng cung cấp lý do chi tiết..."
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    background: "#27272a",
-                    border: "1px solid #52525b",
-                    borderRadius: "6px",
-                    color: "#fff",
-                    fontSize: "14px",
-                    resize: "vertical",
-                  }}
-                  required
-                />
-              </div>
-
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  onClick={() => setRefundModalTicket(null)}
-                  style={{
-                    padding: "8px 16px",
-                    background: "#3f3f46",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Đóng
-                </button>
-                <button
-                  type="submit"
-                  disabled={refundSubmitting}
-                  style={{
-                    padding: "8px 16px",
-                    background: "#dc2626",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    fontWeight: "600",
-                  }}
-                >
-                  {refundSubmitting ? "Đang gửi..." : "Gửi yêu cầu hoàn tiền"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

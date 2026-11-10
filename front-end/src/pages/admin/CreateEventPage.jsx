@@ -9,6 +9,7 @@ import {
   RegisterEventStep4,
 } from "@/features/event-creation";
 import { axiosInstance } from "@/services/apiClient";
+import { PATHS } from "@/routes/paths";
 
 const CreateEventPage = () => {
   const [stepOneData, setStepOneData] = useState({

@@ -34,7 +34,7 @@ function buildTermsHtml({ event, sessions, profile, commission, customTerms }) {
       Number(commission).toFixed(2) +
       "%</strong> trên doanh thu bán vé thực thu (sau khi trừ các khoản hoàn tiền).</p>",
     "<p><b>Điều 2. Đối soát.</b> Sau khi sự kiện kết thúc, Bên A đối soát doanh thu và chuyển khoản phần còn lại vào tài khoản ngân hàng đã đăng ký của Bên B.</p>",
-    "<p><b>Điều 3. Hoàn tiền.</b> Bên B tuân thủ chính sách hoàn vé đã cấu hình cho sự kiện. Khi sự kiện bị hủy, Bên A hoàn tiền cho người mua và trừ vào doanh thu của Bên B.</p>",
+    "<p><b>Điều 3. Hoàn tiền.</b> Người mua không được hoàn vé lẻ; vé chỉ được chuyển nhượng qua Chợ vé bán lại. Khi sự kiện bị hủy, Bên A hoàn tiền cho người mua và trừ vào doanh thu của Bên B.</p>",
     "<p><b>Điều 4. Trách nhiệm.</b> Bên B chịu trách nhiệm về tính pháp lý của sự kiện và giấy phép tổ chức đã cung cấp.</p>",
     customTerms ? `<p><b>Điều khoản bổ sung:</b></p>${plainToHtml(customTerms)}` : "",
   ].join("");

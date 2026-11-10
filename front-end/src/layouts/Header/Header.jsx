@@ -77,7 +77,15 @@ const Header = () => {
           </Link>
 
           {/* Navigation buttons */}
-          <Link to={PATHS.ADMIN_CREATE_EVENT}>
+          <Link
+            to={
+              !user
+                ? PATHS.LOGIN
+                : user.role === "ORGANIZER" || user.role === "ADMIN"
+                ? PATHS.ADMIN_CREATE_EVENT
+                : PATHS.ORGANIZER_KYC
+            }
+          >
             <button>Tạo sự kiện</button>
           </Link>
           <Link to={PATHS.USER_TICKETS}>
@@ -105,6 +113,15 @@ const Header = () => {
                 <Link to={PATHS.USER_TICKETS}>🎟 Vé của tôi</Link>
                 <Link to={PATHS.RESALE_MARKET}>🔄 Chợ vé bán lại</Link>
                 <Link to={PATHS.USER_ACCOUNT}>⚙️ Tài khoản của tôi</Link>
+
+                {/* For customer: show link to register as organizer */}
+                {user.role === "CUSTOMER" && (
+                  <>
+                    <div className="dropdown-divider" />
+                    <div className="dropdown-group-label">Đối tác tổ chức</div>
+                    <Link to={PATHS.ORGANIZER_KYC}>🌟 Đăng ký làm Nhà tổ chức (KYC)</Link>
+                  </>
+                )}
 
                 {/* Organizer actions */}
                 {(user.role === "ORGANIZER" || user.role === "ADMIN") && (
@@ -137,7 +154,8 @@ const Header = () => {
                     <Link to={PATHS.ADMIN_EVENTS_APPROVAL}>📋 Phê duyệt sự kiện & HĐ</Link>
                     <Link to={PATHS.ADMIN_KYC}>🔍 Duyệt hồ sơ KYC BTC</Link>
                     <Link to={PATHS.ADMIN_SETTLEMENTS}>💰 Đối soát & Giải ngân</Link>
-                    <Link to={PATHS.ADMIN_REFUNDS}>⚡ Quản lý hoàn tiền</Link>
+                    <Link to={PATHS.ADMIN_REFUNDS}>⚡ Hoàn tiền huỷ sự kiện</Link>
+                    <Link to={PATHS.ADMIN_RESALE_PAYOUTS}>💸 Chi trả vé bán lại</Link>
                     <Link to={PATHS.ADMIN_USERS}>👥 Quản lý người dùng</Link>
                     <Link to={PATHS.ADMIN_CATEGORIES}>🏷 Danh mục & Hoa hồng</Link>
                     <Link to={PATHS.ADMIN_SEATMAP}>🗺 Dựng sơ đồ chỗ ngồi</Link>

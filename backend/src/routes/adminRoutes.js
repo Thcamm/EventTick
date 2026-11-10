@@ -4,6 +4,7 @@ const { requireRole } = require("../middleware/auth");
 const contractCtrl = require("../controllers/contractController");
 const adminCtrl = require("../controllers/adminController");
 const seatMapCtrl = require("../controllers/seatMapController");
+const resaleCtrl = require("../controllers/resaleController");
 
 router.use(requireRole("ADMIN"));
 
@@ -39,11 +40,13 @@ router.get("/payouts", adminCtrl.listPayouts);
 router.put("/payouts/:id/approve", adminCtrl.approvePayout);
 router.put("/payouts/:id/settle", adminCtrl.settlePayout);
 
-// UC43: Quản lý Hoàn tiền & Hoàn tiền hàng loạt
+// UC43: Hoàn tiền — CHỈ khi sự kiện bị huỷ (hoàn hàng loạt). Không có hoàn vé lẻ.
 router.get("/refunds", adminCtrl.listRefunds);
-router.put("/refunds/:id/approve", adminCtrl.approveRefund);
-router.put("/refunds/:id/reject", adminCtrl.rejectRefund);
 router.post("/events/:id/bulk-refund", adminCtrl.bulkRefundEvent);
+
+// Chợ vé bán lại: chi trả tiền cho người bán sau khi vé được mua
+router.get("/resale/payouts", resaleCtrl.adminListPayouts);
+router.put("/resale/payouts/:id/paid", resaleCtrl.adminMarkPayoutPaid);
 
 // UC44: Thống kê doanh thu toàn hệ thống & Tổng quan
 router.get("/analytics/revenue", adminCtrl.getRevenueAnalytics);

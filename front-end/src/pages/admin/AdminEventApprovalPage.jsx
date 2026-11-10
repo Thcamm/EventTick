@@ -82,6 +82,17 @@ export default function AdminEventApprovalPage() {
     }
   }, [activeTab, fetchEvents, fetchContracts]);
 
+  // Initial load: fetch contract count so tab header displays accurately
+  useEffect(() => {
+    api.get("/admin/contracts")
+      .then((res) => {
+        if (res.data?.success) {
+          setContractTotal(res.data.total || (res.data.items || []).length || 0);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Handlers
   const handleApproveSubmit = async (e) => {
     e.preventDefault();
@@ -99,6 +110,13 @@ export default function AdminEventApprovalPage() {
         });
         setApprovingEvent(null);
         fetchEvents();
+        api.get("/admin/contracts")
+          .then((res) => {
+            if (res.data?.success) {
+              setContractTotal(res.data.total || (res.data.items || []).length || 0);
+            }
+          })
+          .catch(() => {});
       }
     } catch (err) {
       setToast({ type: "error", message: err.response?.data?.message || "Không thể duyệt sự kiện" });
@@ -249,7 +267,18 @@ export default function AdminEventApprovalPage() {
               {eventsLoading ? (
                 <div className="tab-loading">Đang tải danh sách sự kiện...</div>
               ) : events.length === 0 ? (
-                <div className="tab-empty">Không có sự kiện nào trong danh mục này.</div>
+                <div className="tab-empty" style={{ padding: "40px 20px", textAlign: "center", color: "#64748b" }}>
+                  <p style={{ fontSize: "16px", fontWeight: "600", marginBottom: "8px" }}>
+                    {eventStatusFilter === "PENDING"
+                      ? "Hiện không có sự kiện nào đang chờ duyệt."
+                      : "Không có sự kiện nào trong danh mục này."}
+                  </p>
+                  <p style={{ fontSize: "13px", margin: 0 }}>
+                    {eventStatusFilter === "PENDING"
+                      ? "Khi Nhà tổ chức gửi tạo sự kiện mới, sự kiện sẽ xuất hiện tại đây để Admin thẩm định giấy phép và phê duyệt."
+                      : "Thay đổi bộ lọc để xem các sự kiện ở trạng thái khác."}
+                  </p>
+                </div>
               ) : (
                 <div className="table-responsive">
                   <table className="admin-table">
@@ -365,7 +394,18 @@ export default function AdminEventApprovalPage() {
               {contractsLoading ? (
                 <div className="tab-loading">Đang tải danh sách hợp đồng...</div>
               ) : contracts.length === 0 ? (
-                <div className="tab-empty">Không tìm thấy hợp đồng nào.</div>
+                <div className="tab-empty" style={{ padding: "40px 20px", textAlign: "center", color: "#64748b" }}>
+                  <p style={{ fontSize: "16px", fontWeight: "600", marginBottom: "8px" }}>
+                    {contractStatusFilter === "WAITING_SIGN"
+                      ? "Không có hợp đồng nào đang chờ ký."
+                      : contractStatusFilter === "SIGNED"
+                      ? "Chưa có hợp đồng nào đã ký số."
+                      : "Không tìm thấy hợp đồng nào."}
+                  </p>
+                  <p style={{ fontSize: "13px", margin: 0 }}>
+                    Hợp đồng điện tử chỉ được hệ thống tự động khởi tạo sau khi Admin phê duyệt một sự kiện ở Tab &quot;Hàng chờ kiểm duyệt sự kiện&quot;.
+                  </p>
+                </div>
               ) : (
                 <div className="table-responsive">
                   <table className="admin-table">

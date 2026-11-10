@@ -27,8 +27,6 @@ const schema = new Schema(
     has_seat_map: { type: Boolean, default: false }, // false = Vé đứng (GA), true = có sơ đồ ghế
     allow_resale: { type: Boolean, default: false },
     max_resale_markup_pct: { type: Number, default: 0, min: 0 },
-    allow_refund: { type: Boolean, default: false },
-    refund_deadline_hours: { type: Number, default: 48, min: 0 },
     custom_form_schema: { type: Schema.Types.Mixed },
     legal_doc_url: { type: String },
     status: {

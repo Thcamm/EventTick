@@ -26,6 +26,7 @@ import AdminUserPage from "@/pages/admin/AdminUserPage";
 import AdminCategoryPage from "@/pages/admin/AdminCategoryPage";
 import AdminSettlementPage from "@/pages/admin/AdminSettlementPage";
 import AdminRefundPage from "@/pages/admin/AdminRefundPage";
+import AdminResalePayoutPage from "@/pages/admin/AdminResalePayoutPage";
 
 // Organizer Pages
 import OrganizerKycPage from "@/pages/organizer/OrganizerKycPage";
@@ -39,6 +40,8 @@ import StaffTrafficPage from "@/pages/staff/StaffTrafficPage";
 
 // Resale Page
 import ResaleMarketPage from "@/pages/resale/ResaleMarketPage";
+import ResaleEventPage from "@/pages/resale/ResaleEventPage";
+import ResaleBundlePage from "@/pages/resale/ResaleBundlePage";
 
 // User Pages
 import MyTicketPage from "@/pages/user/MyTicketPage";
@@ -67,18 +70,20 @@ const AppRoutes = () => {
         <Route path={PATHS.SEARCH} element={<SearchResultsPage />} />
         <Route path={PATHS.EVENT_DETAILS} element={<EventDetailPage />} />
         <Route path={PATHS.RESALE_MARKET} element={<ResaleMarketPage />} />
+        <Route path={PATHS.RESALE_EVENT} element={<ResaleEventPage />} />
+        <Route path={PATHS.RESALE_BUNDLE} element={<ResaleBundlePage />} />
 
-        {/* User protected routes */}
+        {/* User protected routes (All authenticated users including CUSTOMER) */}
         <Route element={<ProtectedRoute />}>
           <Route path={PATHS.USER_TICKETS} element={<MyTicketPage />} />
           <Route path={PATHS.USER_ACCOUNT} element={<AccountPage />} />
           <Route path={PATHS.ADMIN_MY_EVENTS} element={<MyEventPage />} />
+          <Route path={PATHS.ORGANIZER_KYC} element={<OrganizerKycPage />} />
         </Route>
 
         {/* Organizer protected routes (ORGANIZER & ADMIN) */}
         <Route element={<ProtectedRoute allowedRoles={["ORGANIZER", "ADMIN"]} />}>
           <Route path={PATHS.ADMIN_CREATE_EVENT} element={<CreateEventPage />} />
-          <Route path={PATHS.ORGANIZER_KYC} element={<OrganizerKycPage />} />
           <Route path={PATHS.ORGANIZER_CONTRACTS} element={<OrganizerContractsPage />} />
           <Route path={PATHS.ORGANIZER_EVENT_DASHBOARD} element={<OrganizerEventDashboardPage />} />
           <Route path={PATHS.ORGANIZER_EVENT_VOUCHERS} element={<OrganizerVouchersPage />} />
@@ -99,6 +104,7 @@ const AppRoutes = () => {
           <Route path={PATHS.ADMIN_CATEGORIES} element={<AdminCategoryPage />} />
           <Route path={PATHS.ADMIN_SETTLEMENTS} element={<AdminSettlementPage />} />
           <Route path={PATHS.ADMIN_REFUNDS} element={<AdminRefundPage />} />
+          <Route path={PATHS.ADMIN_RESALE_PAYOUTS} element={<AdminResalePayoutPage />} />
           <Route path={PATHS.ADMIN_SEATMAP} element={<AdminSeatmapPage />} />
         </Route>
       </Route>
@@ -125,6 +131,11 @@ const AppRoutes = () => {
       <Route path="/events" element={<Navigate to={PATHS.HOME} replace />} />
       <Route path="/admin/my-events" element={<Navigate to={PATHS.ADMIN_MY_EVENTS} replace />} />
       <Route path="/admin/create-event" element={<Navigate to={PATHS.ADMIN_CREATE_EVENT} replace />} />
+      <Route path="/admin/approval" element={<Navigate to={PATHS.ADMIN_EVENTS_APPROVAL} replace />} />
+      <Route path="/admin/event-approval" element={<Navigate to={PATHS.ADMIN_EVENTS_APPROVAL} replace />} />
+      <Route path="/admin/approve" element={<Navigate to={PATHS.ADMIN_EVENTS_APPROVAL} replace />} />
+      <Route path="/organizer/register" element={<Navigate to={PATHS.ORGANIZER_KYC} replace />} />
+      <Route path="/kyc" element={<Navigate to={PATHS.ORGANIZER_KYC} replace />} />
       <Route path="/organizer/dashboard" element={<Navigate to={PATHS.ADMIN_MY_EVENTS} replace />} />
       <Route path="/organizer/events" element={<Navigate to={PATHS.ADMIN_MY_EVENTS} replace />} />
       <Route path="/user/account" element={<Navigate to={PATHS.USER_ACCOUNT} replace />} />

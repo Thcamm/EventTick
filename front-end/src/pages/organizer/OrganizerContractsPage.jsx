@@ -24,7 +24,8 @@ const OrganizerContractsPage = () => {
       setLoading(true);
       setError(null);
       const res = await apiClient.get("/organizer/contracts");
-      setContracts(res.data?.contracts || []);
+      const list = res.data?.contracts || res.data?.items || [];
+      setContracts(list);
     } catch (err) {
       setError(err.response?.data?.message || "Không thể tải danh sách hợp đồng");
     } finally {
@@ -79,7 +80,8 @@ const OrganizerContractsPage = () => {
     setHasDrawn(false);
   };
 
-  const openSignModal = (contract) => {
+  const openSignModal = async (contract) => {
+    const cId = contract._id || contract.id;
     setSigningContract(contract);
     setAgreed(false);
     setHasDrawn(false);
@@ -87,6 +89,30 @@ const OrganizerContractsPage = () => {
     setTimeout(() => {
       clearCanvas();
     }, 100);
+
+    // Tải thông tin chi tiết kèm điều khoản HTML chính thức
+    try {
+      const res = await apiClient.get(`/organizer/contracts/${cId}`);
+      const full = res.data?.contract || res.data?.item;
+      if (full) {
+        setSigningContract((prev) => ({ ...prev, ...full }));
+      }
+    } catch {
+      // Giữ thông tin cơ bản nếu không tải được chi tiết
+    }
+  };
+
+  const handleDownloadPdf = async (contract) => {
+    const cId = contract?._id || contract?.id;
+    if (!cId) return;
+    try {
+      const res = await apiClient.get(`/organizer/contracts/${cId}/pdf`);
+      if (res.data?.url) {
+        window.open(res.data.url, "_blank");
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || "Không thể tải tệp PDF hợp đồng");
+    }
   };
 
   const handleSignSubmit = async () => {
@@ -101,11 +127,12 @@ const OrganizerContractsPage = () => {
 
     const canvas = canvasRef.current;
     const signatureBase64 = canvas ? canvas.toDataURL("image/png") : "";
+    const cId = signingContract?._id || signingContract?.id;
 
     try {
       setSubmittingSign(true);
       setSignError(null);
-      await apiClient.post(`/organizer/contracts/${signingContract.id}/sign`, {
+      await apiClient.post(`/organizer/contracts/${cId}/sign`, {
         signature: signatureBase64,
         agree: true,
       });
@@ -168,49 +195,69 @@ const OrganizerContractsPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {contracts.map((c) => (
-                    <tr key={c.id}>
-                      <td className="font-mono">{c.contractNumber || "HĐ-EVENT"}</td>
-                      <td className="event-title-cell">{c.eventTitle || "Sự kiện"}</td>
-                      <td className="commission-cell">
-                        <span className="tag-commission">
-                          {c.commissionRatePct ?? 10}%
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`status-badge status-${c.status?.toLowerCase()}`}>
-                          {c.status === "SIGNED"
-                            ? "ĐÃ KÝ"
-                            : c.status === "WAITING_SIGN"
-                            ? "CHỜ KÝ"
-                            : c.status}
-                        </span>
-                      </td>
-                      <td>{new Date(c.createdAt).toLocaleDateString("vi-VN")}</td>
-                      <td>
-                        {c.signedAt
-                          ? new Date(c.signedAt).toLocaleString("vi-VN")
-                          : "—"}
-                      </td>
-                      <td>
-                        {c.status === "WAITING_SIGN" ? (
-                          <button
-                            className="btn-sign"
-                            onClick={() => openSignModal(c)}
-                          >
-                            ✍️ Xem & Ký số
-                          </button>
-                        ) : (
-                          <button
-                            className="btn-view"
-                            onClick={() => openSignModal(c)}
-                          >
-                            👁️ Xem chi tiết
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {contracts.map((c) => {
+                    const cId = c._id || c.id;
+                    const isSigned = c.status === "SIGNED";
+                    const isWaiting = c.status === "WAITING_SIGN";
+                    return (
+                      <tr key={cId}>
+                        <td className="font-mono">{c.contractNumber || c.code || "HĐ-EVENT"}</td>
+                        <td className="event-title-cell">{c.eventTitle || c.event_id?.title || "Sự kiện"}</td>
+                        <td className="commission-cell">
+                          <span className="tag-commission">
+                            {c.commissionRatePct ?? c.commission_rate_pct ?? 10}%
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-badge status-${String(c.status).toLowerCase()}`}>
+                            {isSigned
+                              ? "ĐÃ KÝ"
+                              : isWaiting
+                              ? "CHỜ KÝ"
+                              : c.status}
+                          </span>
+                        </td>
+                        <td>
+                          {c.createdAt
+                            ? new Date(c.createdAt).toLocaleDateString("vi-VN")
+                            : "—"}
+                        </td>
+                        <td>
+                          {c.signedAt
+                            ? new Date(c.signedAt).toLocaleString("vi-VN")
+                            : "—"}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            {isWaiting ? (
+                              <button
+                                className="btn-sign"
+                                onClick={() => openSignModal(c)}
+                              >
+                                ✍️ Xem & Ký số
+                              </button>
+                            ) : (
+                              <button
+                                className="btn-view"
+                                onClick={() => openSignModal(c)}
+                              >
+                                👁️ Xem chi tiết
+                              </button>
+                            )}
+                            {isSigned && (
+                              <button
+                                className="btn-view"
+                                title="Tải tệp PDF hợp đồng"
+                                onClick={() => handleDownloadPdf(c)}
+                              >
+                                📄 Tải PDF
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -231,40 +278,59 @@ const OrganizerContractsPage = () => {
 
             <div className="modal-body">
               <div className="contract-preview-box">
-                <div className="contract-title">
-                  <h3>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h3>
-                  <p>Độc lập - Tự do - Hạnh phúc</p>
-                  <hr />
-                  <h4>HỢP ĐỒNG DỊCH VỤ PHÂN PHỐI VÉ TRỰC TUYẾN</h4>
-                  <p className="contract-no">Số: {signingContract.contractNumber}</p>
-                </div>
+                {signingContract.termsHtml ? (
+                  <div
+                    className="contract-html-content"
+                    dangerouslySetInnerHTML={{ __html: signingContract.termsHtml }}
+                  />
+                ) : (
+                  <>
+                    <div className="contract-title">
+                      <h3>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h3>
+                      <p>Độc lập - Tự do - Hạnh phúc</p>
+                      <hr />
+                      <h4>HỢP ĐỒNG DỊCH VỤ PHÂN PHỐI VÉ TRỰC TUYẾN</h4>
+                      <p className="contract-no">Số: {signingContract.contractNumber || signingContract.code || signingContract._id}</p>
+                    </div>
 
-                <div className="contract-content">
-                  <p><strong>Bên A (Nền tảng):</strong> HỆ THỐNG PHÂN PHỐI VÉ TRỰC TUYẾN EVENTTICK</p>
-                  <p><strong>Bên B (Nhà tổ chức):</strong> {signingContract.organizerName || "Đơn vị tổ chức"}</p>
-                  <p><strong>Sự kiện phân phối:</strong> {signingContract.eventTitle}</p>
-                  <p>
-                    <strong>Tỷ lệ chiết khấu sàn:</strong> {signingContract.commissionRatePct}% trên tổng doanh thu vé bán trực tuyến thành công.
-                  </p>
-                  <p><strong>Hình thức vé và soát vé:</strong></p>
-                  <ul>
-                    <li>Hệ thống 100% bán và phát hành vé điện tử (E-Ticket) với mã QR mã hóa HMAC-SHA256 chống làm giả.</li>
-                    <li>Khách hàng tham dự quét vé trực tiếp qua ứng dụng/cổng soát vé nhân viên trực tuyến, không sử dụng vé giấy.</li>
-                    <li>Doanh thu sự kiện được kết toán và đối soát tự động sau khi sự kiện kết thúc.</li>
-                  </ul>
-                </div>
+                    <div className="contract-content">
+                      <p><strong>Bên A (Nền tảng):</strong> HỆ THỐNG PHÂN PHỐI VÉ TRỰC TUYẾN EVENTTICK</p>
+                      <p><strong>Bên B (Nhà tổ chức):</strong> {signingContract.organizerName || signingContract.organizer_name || "Đơn vị tổ chức"}</p>
+                      <p><strong>Sự kiện phân phối:</strong> {signingContract.eventTitle || signingContract.event_id?.title}</p>
+                      <p>
+                        <strong>Tỷ lệ chiết khấu sàn:</strong> {signingContract.commissionRatePct ?? signingContract.commission_rate_pct ?? 10}% trên tổng doanh thu vé bán trực tuyến thành công.
+                      </p>
+                      <p><strong>Hình thức vé và soát vé:</strong></p>
+                      <ul>
+                        <li>Hệ thống 100% bán và phát hành vé điện tử (E-Ticket) với mã QR mã hóa HMAC-SHA256 chống làm giả.</li>
+                        <li>Khách hàng tham dự quét vé trực tiếp qua ứng dụng/cổng soát vé nhân viên trực tuyến, không sử dụng vé giấy.</li>
+                        <li>Doanh thu sự kiện được kết toán và đối soát tự động sau khi sự kiện kết thúc.</li>
+                      </ul>
+                    </div>
+                  </>
+                )}
               </div>
 
               {signingContract.status === "SIGNED" ? (
                 <div className="signed-evidence-box">
                   <h4>Thông tin chứng thực chữ ký điện tử</h4>
                   <p>Hợp đồng đã được ký số và có hiệu lực pháp lý.</p>
-                  <p>Thời gian ký: {new Date(signingContract.signedAt).toLocaleString("vi-VN")}</p>
+                  <p>Thời gian ký: {signingContract.signedAt ? new Date(signingContract.signedAt).toLocaleString("vi-VN") : "—"}</p>
+                  {signingContract.signerIp && <p>IP ký kết: <code>{signingContract.signerIp}</code></p>}
                   {signingContract.signatureDataUrl && (
                     <div className="signature-preview">
                       <img src={signingContract.signatureDataUrl} alt="Chữ ký điện tử" />
                     </div>
                   )}
+                  <div style={{ marginTop: "16px" }}>
+                    <button
+                      type="button"
+                      className="btn-download-pdf"
+                      onClick={() => handleDownloadPdf(signingContract)}
+                    >
+                      📄 Tải bản PDF chính thức có chữ ký
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="sign-action-box">

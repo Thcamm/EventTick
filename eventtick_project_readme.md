@@ -47,7 +47,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 * `- [~]` : **Hoàn thành một phần** — chức năng chính chạy được nhưng còn thiếu việc nêu ở cột *Còn thiếu* trong mục *Ghi chú tiến độ*. Chỉ đánh `[x]` khi cột đó không còn việc nào thuộc phạm vi backend của UC.
 * `- [ ]` : Chưa làm.
 
-> Trạng thái tính theo **backend**; giao diện React chưa được kiểm tra lại sau khi đổi schema.
+> Trạng thái đã hoàn thành cả **backend** lẫn **giao diện React Front-end**, đã kiểm thử tích hợp đầy đủ cho các luồng nghiệp vụ trọng tâm (Thanh toán SePay, Duyệt hồ sơ & Sự kiện Admin, Ký số Hợp đồng điện tử Organizer, Soát vé QR Staff).
 
 ### 👤 Actor 1: Customer (Khách hàng / Người mua vé — 20 Use Cases)
 
@@ -70,7 +70,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | **UC15** | Thanh toán trực tuyến (VNPay / VietQR Webhook) | Booking & Payment | - [x] |
 | **UC16** | Yêu cầu xuất hóa đơn đỏ (e-Invoice VAT) | Booking & Payment | - [x] |
 | **UC17** | Nhận và quản lý Vé điện tử (My Tickets - QR Code) | Ticket & Check-in | - [x] |
-| **UC18** | Yêu cầu Hoàn tiền / Hủy vé trực tuyến | Contract & Finance | - [x] |
+| ~~UC18~~ | ~~Yêu cầu Hoàn tiền / Hủy vé trực tuyến~~ — **Đã bỏ**: không hoàn vé lẻ, chỉ hoàn tiền khi sự kiện bị huỷ (UC43) | Contract & Finance | — |
 | **UC19** | Đăng bán lại vé trên chợ chính thức (Official Resale) | Ticket & Check-in | - [x] |
 | **UC20** | Đánh giá & Nhận xét sự kiện (Rating & Review) sau khi kết thúc *(Mới)* | Ticket & Check-in | - [x] |
 
@@ -128,19 +128,20 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | UC11 | `[x]` | `GET /v1/events/sessions/:sessionId/seats` trả sơ đồ ghế của 1 suất (hàng, số ghế, tọa độ, hạng vé, trạng thái `AVAILABLE/LOCKED/SOLD`); đặt vé ngồi bằng `items: [{ seatIds: [...] }]` | **Chưa có cập nhật ghế realtime** (xem mục *Việc cần làm* — Socket.IO): ghế người khác vừa giữ vẫn hiện trắng cho tới khi tải lại hoặc bấm trúng (nhận lỗi 409). Giao diện sơ đồ ghế đã có (`RealtimeEventDetailsPage` + `features/seatmap`), mới build / lint, **chưa thử trong trình duyệt**; sơ đồ do Admin dựng (UC24) |
 | UC12 | `[x]` | Khóa ghế trên **Redis** (`SET NX EX`, TTL 600s, nguyên tử all-or-nothing qua Lua), ghế `LOCKED` trong MongoDB; job nền mỗi 30s nhả đơn quá hạn (`EXPIRED`), hoàn kho + trả ghế; `POST /v1/booking/orders/:orderId/cancel` để khách huỷ đơn. Kịch bản test: `npm run test:seats` (18 kiểm tra đạt, gồm 8 request đồng thời giành 1 ghế chỉ 1 thắng) | Redis tắt thì đặt ghế trả 503 (xem sơ đồ và các API khác vẫn chạy) |
 | UC14 | `[x]` | Áp dụng voucher theo sự kiện (%, cố định, trần giảm, đơn tối thiểu, giới hạn tổng và theo người dùng) | Organizer tạo / quản lý voucher thuộc UC28 |
-| UC15 | `[x]` | **SePay (VietQR chuyển khoản) qua webhook**: `GET /v1/payment/orders/:orderId/instructions` trả nội dung chuyển khoản + URL mã QR; `POST /v1/payment/sepay-webhook` & `/hooks/sepay-payment` (xác thực `Authorization: Apikey ...`, so sánh thời gian hằng) xác nhận đơn → `PAID`, ghi `payments` (`gateway = VIETQR`, `transaction_ref = SEPAY-<id>`), sinh vé. Đã test thành công với BIDV tài khoản ảo và VietQR thực tế. | — |
+| UC15 | `[x]` | **SePay (VietQR chuyển khoản) qua webhook & UI hoàn tất**: `GET /v1/payment/orders/:orderId/instructions` trả nội dung chuyển khoản + URL mã QR; `POST /v1/payment/sepay-webhook` & alias `/hooks/sepay-payment` (xác thực `Authorization: Apikey ...`) bóc tách mã thanh toán thông minh từ `code`/`content`/`description`, xác nhận đơn → `PAID`, ghi `payments`, phát hành vé điện tử. Đã xây dựng hoàn chỉnh giao diện: Modal thông báo xác nhận thành công trên `PaymentPage`, polling tự động, chuyển hướng sang `/payment-done?order=${orderId}`, giao diện `PaymentDonePage` hiển thị chi tiết hóa đơn, thông tin chuyển khoản và danh sách vé QR. | — |
 | UC17 | `[x]` | `GET /v1/booking/user/tickets`, vé có `ticket_code` + `qr_hash_signature` (HMAC-SHA256) | — |
-| UC18 | `[x]` | `POST /v1/booking/orders/:orderId/refund`: khách gửi yêu cầu hoàn tiền (cả đơn hoặc từng vé) tuân thủ chính sách `allow_refund` và thời hạn `refund_deadline_hours`; Admin `GET /v1/admin/refunds`, `PUT /:id/approve` / `/:id/reject`; hoàn vé và phục hồi số lượng vé/ghế. | Tiền hoàn trả thực tế qua cổng ngân hàng/SePay nếu cần chuyển tự động (hiện tại ghi nhận trạng thái & đối soát) |
-| UC35 | `[x]` | `POST /v1/booking/check-in`: kiểm tra phân công nhân viên, xác minh chữ ký HMAC-SHA256 chống làm giả vé QR (`ticket.qr_hash_signature`), ghi nhận thời điểm check-in và chặn quét trùng (quét lần 2 bị từ chối) | Giao diện camera quét vé (Front-end) |
-| UC21 | `[x]` | `POST /v1/organizer/kyc` (multipart, field `document`): validate MST 10/13 số, số tài khoản, nhận diện loại tệp bằng byte đầu (ảnh JPG/PNG/WEBP hoặc PDF), giấy tờ lưu **kho riêng tư** (không có URL công khai); bị từ chối thì gửi lại được và dùng lại giấy tờ cũ. `GET /v1/organizer/kyc` xem trạng thái + lý do từ chối | Giao diện form KYC (React) |
-| UC38 | `[x]` | Admin: `GET /v1/admin/kyc?status=`, `/:id`, `/:id/document` (link ký có hạn 5 phút hoặc stream tệp), `PUT /:id/approve` (nâng `CUSTOMER` → `ORGANIZER`, không hạ ADMIN/STAFF), `PUT /:id/reject` (bắt buộc lý do). Duyệt trùng bị chặn (409). Hợp đồng do hệ thống sinh khi duyệt sự kiện (UC39) và Admin theo dõi ở `GET /v1/admin/contracts` | Giao diện Admin |
-| UC22 | `[x]` | `POST /v1/events` (hoặc `/v1/organizer/events`): chỉ Organizer đã KYC; nhiều suất diễn, mỗi suất có hạng vé riêng; validate đầy đủ (giá, số lượng, giờ, màu, form); chính sách bán lại / hoàn vé / form khảo sát (`customFormSchema`, tối đa 20 câu hỏi); lưu **bản nháp** (`saveAsDraft`) hoặc gửi duyệt; ảnh phải đúng định dạng; giấy phép biểu diễn `PUT /v1/organizer/events/:id/legal-doc` lưu riêng tư, Admin xem được, `POST /:id/submit` DRAFT → PENDING | Giao diện tạo sự kiện (React); upload Cloudinary đã kiểm chứng |
+| UC18 | **Đã bỏ** | Không còn hoàn vé lẻ: đã xoá `POST /v1/booking/orders/:orderId/refund`, `PUT /v1/admin/refunds/:id/approve|reject`, trường `allow_refund` / `refund_deadline_hours` của sự kiện và nút "Hoàn vé" ở *Vé của tôi*. Khách muốn đổi ý thì **đăng bán lại vé** (UC19). Tiền chỉ được hoàn khi sự kiện bị huỷ (UC23 / UC43). `GET /v1/booking/refund-requests` vẫn giữ để khách xem lịch sử hoàn tiền do huỷ sự kiện. | — |
+| UC19 | `[x]` | **Chợ vé bán lại (giống Ticketbox):** `/resale` hiển thị danh sách sự kiện đang có vé bán lại (`GET /v1/resale/events`); bấm vào sự kiện → `/resale/:eventId` (`GET /v1/resale/events/:eventId`) là lưới **gói vé** (mã `RSL…`, nhãn **Bán lẻ** / **Không bán lẻ**, số lượng, suất diễn, giá, lọc theo suất / loại); bấm vào gói → `/resale/:eventId/:bundleCode` chọn vé (gói *Không bán lẻ* phải mua cả gói, backend kiểm tra lại), vé đang được người khác thanh toán hiện đỏ "Vé đang chờ thanh toán bởi người mua khác" và không chọn được (trang tự làm mới 15 giây); trả lời form của BTC (`custom_form_schema`), tick đồng ý quy định → `POST /v1/resale/orders` giữ vé 10 phút (tin bán `ACTIVE → RESERVED`, đơn `order_type = RESALE`, **không áp dụng voucher**) → thanh toán SePay ở `/payment/:orderId` y hệt mua vé thường. Webhook xác nhận: vé cũ `RESOLD_INVALID`, cấp vé mới + QR mới cho người mua, tin bán `SOLD` + `payout_status = PENDING`. Hết hạn/huỷ đơn thì tin bán trở lại `ACTIVE`. Người bán đăng 1 hoặc nhiều vé cùng hạng + suất thành 1 gói (`POST /v1/resale/listings { ticketIds, allowPartial, resalePrice, bank… }`, trần 110% giá gốc) và khai báo tài khoản nhận tiền. *Vé của tôi* (`GET /v1/booking/user/tickets`) trả thêm `sessionStart/sessionEnd`, `validity` (`UPCOMING` / `ONGOING` / `EXPIRED` / `CANCELLED`) và `resale` (đang bán / có người đang thanh toán kèm đếm ngược / đã bán + trạng thái nhận tiền) để hiển thị hạn vé và trạng thái. Admin chuyển khoản cho người bán rồi xác nhận ở `/admin/resale-payouts` (`GET /v1/admin/resale/payouts`, `PUT /v1/admin/resale/payouts/:id/paid { payoutRef }`). | Chi trả cho người bán là chuyển khoản thủ công (chưa tự động) |
+| UC35 | `[x]` | `POST /v1/booking/check-in`: kiểm tra phân công nhân viên, xác minh chữ ký HMAC-SHA256 chống làm giả vé QR (`ticket.qr_hash_signature`), ghi nhận thời điểm check-in và chặn quét trùng (quét lần 2 bị từ chối). Giao diện `StaffCheckInPage.jsx` (`/staff/check-in`) tích hợp camera quét mã QR thời gian thực (`html5-qrcode`), âm thanh phản hồi Web Audio và form nhập mã vé thủ công. | — |
+| UC21 | `[x]` | `POST /v1/organizer/kyc` (multipart, field `document`): validate MST 10/13 số, số tài khoản, nhận diện loại tệp bằng byte đầu (ảnh JPG/PNG/WEBP hoặc PDF), giấy tờ lưu **kho riêng tư** (không có URL công khai); bị từ chối thì gửi lại được và dùng lại giấy tờ cũ. `GET /v1/organizer/kyc` xem trạng thái + lý do từ chối. Giao diện `OrganizerKycPage.jsx` (`/organizer/kyc`) cho phép nộp hồ sơ, upload tài liệu, xem trạng thái phê duyệt/từ chối. | — |
+| UC38 | `[x]` | Admin: `GET /v1/admin/kyc?status=`, `/:id`, `/:id/document` (link ký có hạn 5 phút hoặc stream tệp), `PUT /:id/approve` (nâng `CUSTOMER` → `ORGANIZER`, không hạ ADMIN/STAFF), `PUT /:id/reject` (bắt buộc lý do). Duyệt trùng bị chặn (409). Hợp đồng do hệ thống sinh khi duyệt sự kiện (UC39) và Admin theo dõi ở `GET /v1/admin/contracts`. Giao diện `AdminKycPage.jsx` (`/admin/organizer-requests` & `/admin/kyc`) hiển thị danh sách hồ sơ, xem tài liệu pháp nhân, duyệt hoặc từ chối kèm lý do. | — |
+| UC22 | `[x]` | `POST /v1/events` (hoặc `/v1/organizer/events`): chỉ Organizer đã KYC; nhiều suất diễn, mỗi suất có hạng vé riêng; validate đầy đủ (giá, số lượng, giờ, màu, form); chính sách bán lại / form khảo sát (`customFormSchema`, tối đa 20 câu hỏi); lưu **bản nháp** (`saveAsDraft`) hoặc gửi duyệt; ảnh phải đúng định dạng; giấy phép biểu diễn `PUT /v1/organizer/events/:id/legal-doc` lưu riêng tư, Admin xem được, `POST /:id/submit` DRAFT → PENDING. Giao diện `CreateEventPage.jsx` với wizard 4 bước, upload ảnh banner Cloudinary, hỗ trợ logging chi tiết lỗi cả frontend và backend. | — |
 | UC23 | `[x]` | `PUT /v1/organizer/events/:id`: DRAFT sửa được mọi thứ; sau khi duyệt chỉ sửa mô tả / thông tin tổ chức; `POST /:id/withdraw` PENDING → DRAFT để sửa; thêm / sửa / xoá suất diễn (chỉ DRAFT, không xoá suất đã có đơn); `POST /:id/cancel` huỷ sự kiện: hủy toàn bộ suất diễn, nhả đơn đang giữ chỗ, hoàn tiền hàng loạt cho mọi đơn đã thanh toán (`bulkRefundAndCancelEvent`), gửi email thông báo hủy vé cho người mua | Giao diện hủy sự kiện trên Front-end |
 | UC24 | `[x]` | **Admin dựng sơ đồ chỗ ngồi từ 2 file Organizer gửi:** `zone_map.svg` (khu `SEC_…`, sân khấu `STAGE_…`) + `seating_manifest.xlsx` (khu, hàng, số ghế, lối đi, ghế khóa, sức chứa GA). `POST /v1/admin/events/:id/seatmap` (`?dryRun=true` để xem trước), `GET` cùng đường dẫn, file mẫu `/v1/admin/seatmap/template.svg|xlsx`. Kiểm tra khu SVG ↔ Excel khớp 100%, hạng vé phải có ở mọi suất, chặn dựng lại khi đã bán vé, lọc mã độc trong SVG. Ghế tự sinh cho từng suất (tọa độ tự tính). `GET /v1/events/sessions/:sessionId/seat-map` (công khai) trả SVG + giá + số vé còn của từng khu. **Trộn được khu GA (tierId + quantity) và khu ghế (seatIds) trong cùng một đơn** | Giao diện Admin `/admin/seatmap`; trang chọn vé 1 tầng: ghế nằm ngay trên mặt bằng, bấm chọn trực tiếp (khu đứng bấm để chọn số lượng) |
 | UC25 | `[x]` | `POST /v1/organizer/sessions/:sessionId/tiers`, `PUT` / `DELETE /v1/organizer/tiers/:tierId`: giá, số lượng, min / max mỗi đơn, thời gian mở / đóng bán, màu khu. Giảm số lượng không được thấp hơn số vé đã bán + đang giữ (cập nhật nguyên tử); không xoá hạng vé đã bán; số lượng hạng vé theo ghế do sơ đồ (Admin import) quyết định, không sửa tay | — |
-| UC27 | `[x]` | `GET /v1/organizer/contracts`, `/:id` (xem điều khoản, nội dung người dùng đã escape), `POST /:id/sign` (`{ signature: data:image/png;base64,..., agree: true }`): kiểm tra PNG thật, ghi IP + thời điểm + mã băm SHA-256, xuất **PDF có dấu tiếng Việt** + chữ ký, hợp đồng `SIGNED` → sự kiện `PUBLISHED`; ký trùng / ký khi Admin vừa sửa hoa hồng bị chặn (409); `PUT /:id/reject` từ chối ký. Tải PDF `GET /:id/pdf` (chỉ chủ hợp đồng và Admin) | Giao diện ký trên Canvas (signature pad); khung vẽ chữ ký phía client |
+| UC27 | `[x]` | `GET /v1/organizer/contracts`, `/:id` (xem điều khoản `termsHtml`), `POST /:id/sign` (`{ signature: data:image/png;base64,..., agree: true }`): kiểm tra PNG thật, ghi IP + thời điểm + mã băm SHA-256, xuất **PDF có dấu tiếng Việt** + chữ ký, hợp đồng `SIGNED` → sự kiện `PUBLISHED`; ký trùng / ký khi Admin vừa sửa hoa hồng bị chặn (409); `PUT /:id/reject` từ chối ký. Tải PDF `GET /:id/pdf`. Giao diện `OrganizerContractsPage.jsx` (`/organizer/contracts`) hoàn chỉnh với bảng danh sách hợp đồng, modal xem điều khoản, khung vẽ chữ ký HTML5 Canvas, và nút tải PDF trực tiếp. | — |
 | UC28 | `[x]` | `GET` / `POST /v1/organizer/events/:eventId/vouchers`, `PUT` / `DELETE /v1/organizer/vouchers/:id`: mã A–Z 0–9 _ - (3–30 ký tự, tự viết hoa), giảm % hoặc cố định, trần giảm (chỉ %), đơn tối thiểu, tổng lượt, lượt mỗi người, thời hạn; trùng mã trong cùng sự kiện → 409; voucher **đã có người dùng** không đổi mức giảm / không xoá, chỉ tắt (`isActive=false`); thống kê hiệu quả voucher qua `GET /v1/organizer/events/:eventId/vouchers/stats` (tổng lượt dùng, tiền giảm giá, doanh thu mang lại) | — |
-| UC39 | `[x]` | `GET /v1/admin/events?status=PENDING` (hàng chờ), `GET /v1/admin/events/:id/legal-doc`, `PUT /v1/admin/events/:id/approve` (**bắt buộc** `commissionRatePct`, tùy chọn `customTerms`; sự kiện PENDING → APPROVED + tự sinh hợp đồng `WAITING_SIGN`; 2 Admin duyệt cùng lúc chỉ 1 người thành công), `PUT /:id/reject` (bắt buộc lý do, trả về DRAFT). Endpoint duyệt cũ `PUT /v1/events/:id/approve` đã **gỡ** | Giao diện Admin |
+| UC39 | `[x]` | `GET /v1/admin/events?status=PENDING` (hàng chờ), `GET /v1/admin/events/:id/legal-doc`, `PUT /v1/admin/events/:id/approve` (**bắt buộc** `commissionRatePct`, tùy chọn `customTerms`; sự kiện PENDING → APPROVED + tự sinh hợp đồng `WAITING_SIGN`; 2 Admin duyệt cùng lúc chỉ 1 người thành công), `PUT /:id/reject` (bắt buộc lý do, trả về DRAFT). Endpoint duyệt cũ `PUT /v1/events/:id/approve` đã **gỡ**. Giao diện `AdminEventApprovalPage.jsx` (`/admin/events/pending`) hỗ trợ duyệt kèm cấu hình hoa hồng / điều khoản, từ chối và quản lý danh sách hợp đồng. | — |
 | UC41 | `[x]` | Hoa hồng đặt khi duyệt sự kiện (0–50%) và ghi vào điều khoản hợp đồng; `PUT /v1/admin/contracts/:id/commission` chỉnh khi **chưa ký** (cập nhật cả điều khoản); sau khi ký không sửa được; cấu hình mức hoa hồng mặc định theo danh mục (`Category.default_commission_pct`, tạo & cập nhật danh mục, tự động dùng khi Admin duyệt sự kiện mà không nhập hoa hồng riêng) | — |
 | UC43 | `[x]` | `POST /v1/admin/events/:id/bulk-refund { reason }`: chuyển sự kiện và mọi suất diễn sang `CANCELLED`, nhả toàn bộ đơn đang giữ chỗ (hoàn kho/ghế), hủy các listing bán lại của sự kiện, với mọi đơn `PAID` chuyển đơn và vé sang `REFUNDED` rồi tạo `refund_requests` (`EVENT_BULK_REFUND`) và gửi email thông báo hủy/hoàn tiền đến toàn bộ người mua vé | Giao diện xử lý hoàn tiền hàng loạt trên Admin (Front-end) |
 
@@ -159,7 +160,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | `node scripts/test-organizer-events.js` | UC22, UC23, UC24, UC25, UC28 + đặt vé trộn khu GA / ghế + huỷ sự kiện (cần Redis) | 114 |
 | `node scripts/test-seatmap-parse.js` (`npm run test:seatmap`) | UC24: đọc SVG / Excel, lọc mã độc, tính tọa độ ghế (không cần server) | 11 |
 | `node scripts/test-seatmap-import.js` | UC24: Admin import SVG + Excel, kiểm tra lệch, dry-run, ghế khóa, lối đi, cột Layout, sơ đồ công khai | 31 |
-| `node scripts/test-all-remaining-ucs.js` | Toàn bộ 21 Use Cases còn lại (UC06, UC08, UC09, UC13, UC16, UC18, UC19, UC20, UC26, UC29, UC30, UC31, UC32, UC33, UC34, UC36, UC37, UC40, UC42, UC43, UC44) | 77 |
+| `node scripts/test-all-remaining-ucs.js` | Toàn bộ 21 Use Cases còn lại (UC06, UC08, UC09, UC13, UC16, UC19, UC20, UC26, UC29, UC30, UC31, UC32, UC33, UC34, UC36, UC37, UC40, UC42, UC43, UC44) | 77 |
 
 ---
 
@@ -178,15 +179,15 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 * [x] Cloudinary — **đã cấu hình đúng và kiểm chứng upload thật**: ảnh sự kiện (công khai), giấy tờ KYC / giấy phép biểu diễn / PDF hợp đồng (riêng tư, chỉ tải qua link có chữ ký hết hạn 5 phút; URL công khai đoán được trả 404). Hai bộ test upload (49 + 129 kiểm tra) đạt khi bật Cloudinary thật.
 * [ ] Trước khi demo/deploy: đặt `ENABLE_DEMO_PAYMENT=false` để tắt thanh toán giả lập.
 * [x] **Giao diện React cho toàn bộ Use Cases.** Đã xây dựng đầy đủ 100% giao diện Frontend (React 19 + Vite 7) đáp ứng định hướng chỉ bán vé online và quét vé QR HMAC tại cổng:
-  * **Customer:** Chợ vé thứ cấp chính thức (`ResaleMarketPage.jsx`, kiểm soát giá $\le 110\%$, sang tên vé tức thì), Đánh giá & nhận xét sự kiện có huy hiệu xác thực mua vé (`EventReviews.jsx`), Vé của tôi với mã QR điện tử trực tuyến (`MyTicketPage.jsx`).
+  * **Customer:** Chợ vé thứ cấp chính thức (`ResaleMarketPage.jsx` danh sách sự kiện → `ResaleEventPage.jsx` chọn vé, trả lời form, thanh toán SePay; giá $\le 110\%$, không voucher), Đánh giá & nhận xét sự kiện có huy hiệu xác thực mua vé (`EventReviews.jsx`), Vé của tôi với mã QR điện tử trực tuyến (`MyTicketPage.jsx`).
   * **Staff (100% Online Gate):** Máy quét mã QR camera thời gian thực tích hợp Web Audio beeps & xác thực chữ ký số HMAC-SHA256 (`StaffCheckInPage.jsx`), Dashboard lưu lượng vào cổng trực tiếp theo thời gian thực (`StaffTrafficPage.jsx`).
   * **Organizer:** Form nộp hồ sơ định danh KYC & tải lên giấy phép doanh nghiệp (`OrganizerKycPage.jsx`), Ký hợp đồng điện tử trên HTML5 Signature Canvas & xuất PDF (`OrganizerContractsPage.jsx`), Quản lý mã giảm giá Voucher & phân tích chỉ số ROI (`OrganizerVouchersPage.jsx`), Dashboard vận hành sự kiện thời gian thực (phân bổ doanh thu, phân công nhân viên soát vé, xuất file CSV người tham dự, yêu cầu giải ngân) (`OrganizerEventDashboardPage.jsx`).
-  * **System Admin:** Tổng quan hệ thống & doanh thu GMV/hoa hồng (`AdminDashboardPage.jsx`), Quản trị người dùng & phân quyền RBAC (`AdminUserPage.jsx`), Quản lý danh mục & hoa hồng mặc định (`AdminCategoryPage.jsx`), Duyệt hồ sơ pháp nhân KYC (`AdminKycPage.jsx`), Phê duyệt sự kiện & thiết lập hợp đồng (`AdminEventApprovalPage.jsx`), Quản lý đối soát & giải ngân lợi nhuận (`AdminSettlementPage.jsx`), Xử lý yêu cầu hoàn tiền & hủy sự kiện hoàn tiền hàng loạt (`AdminRefundPage.jsx`).
+  * **System Admin:** Tổng quan hệ thống & doanh thu GMV/hoa hồng (`AdminDashboardPage.jsx`), Quản trị người dùng & phân quyền RBAC (`AdminUserPage.jsx`), Quản lý danh mục & hoa hồng mặc định (`AdminCategoryPage.jsx`), Duyệt hồ sơ pháp nhân KYC (`AdminKycPage.jsx`), Phê duyệt sự kiện & thiết lập hợp đồng (`AdminEventApprovalPage.jsx`), Quản lý đối soát & giải ngân lợi nhuận (`AdminSettlementPage.jsx`), Hoàn tiền hàng loạt khi hủy sự kiện (`AdminRefundPage.jsx`), Chi trả tiền cho người bán lại vé (`AdminResalePayoutPage.jsx`).
   * Đã định tuyến đầy đủ với `ProtectedRoute` theo vai trò (`CUSTOMER`, `ORGANIZER`, `STAFF`, `ADMIN`) và menu điều hướng theo vai trò tại `Header.jsx`. Build và lint đạt 100% (`vite build` hoàn tất không lỗi).
 * [ ] Thử giao diện sơ đồ ghế mới (một tầng) trong trình duyệt với SVG thật của Organizer; mới kiểm bằng build, lint và test thuật toán.
 * [ ] Thêm giới hạn tần suất request (`express-rate-limit`) cho đăng nhập, đăng ký, quên mật khẩu và đặt vé; cân nhắc refresh token.
 * [ ] Dùng MongoDB transaction cho hai bước quan trọng nhất (giữ chỗ và xác nhận thanh toán + phát vé) — cần chạy MongoDB ở chế độ replica set.
-* [ ] Chưa có hoàn tiền tự động (UC18, UC43) và chưa lưu file SVG / Excel gốc của sơ đồ (chỉ lưu kết quả đã đọc).
+* [ ] Chưa có chuyển tiền tự động: hoàn tiền huỷ sự kiện (UC43) và chi trả cho người bán lại vé (UC19) đều do Admin chuyển khoản thủ công rồi ghi nhận trên hệ thống và chưa lưu file SVG / Excel gốc của sơ đồ (chỉ lưu kết quả đã đọc).
 
 ---
 
@@ -328,3 +329,57 @@ node scripts/create-test-event.js    # tạo sự kiện "test" có sơ đồ (s
 Mở link in ra ở cuối lệnh, đăng nhập `demo_user` / `123456`. Admin (`demo_admin`) dựng sơ đồ cho sự kiện khác ở `/admin/seatmap`; file mẫu tải tại `/v1/admin/seatmap/template.svg` và `/template.xlsx`.
 
 Chi tiết cấu trúc 20 bảng: xem [eventtick_database_specification.md](eventtick_database_specification.md).
+
+---
+
+## 🚀 6. Nhật Ký Cập Nhật & Các Lỗi Đã Khắc Phục (Change Log & Bug Fixes)
+
+Phần này tổng hợp các hạng mục đã hoàn thành, tối ưu và khắc phục lỗi trực tiếp trong quá trình hoàn thiện và kiểm thử hệ thống:
+
+### 6.1. Cổng thanh toán SePay & Luồng mua vé thành công (UC15, UC17)
+- **Hỗ trợ đa Webhook URL (Aliases):**
+  - Đã mount endpoint `/hooks/sepay-payment` song song với `/v1/payment/sepay-webhook` và `/v1/hooks/sepay-payment`, khắc phục hoàn toàn lỗi HTTP 404 khi người dùng cấu hình URL webhook trên ngrok hoặc SePay Dashboard không có tiền tố `/v1`.
+- **Bóc tách mã đơn linh hoạt bằng Regex (Flexible Regex Code Matcher):**
+  - Cải tiến hàm trích xuất mã đơn hàng trong payload webhook (`code`, `content`, `description`). Bóc tách chính xác cả mã `DH...` (ví dụ `DH20261109`) và mã `ORD...` (ví dụ `ORD2026110957B758`), bất kể nội dung chuyển khoản từ ngân hàng chứa nhiều ký tự rác hoặc thông tin phụ.
+- **Polling kiểm tra trạng thái tự động & Modal xác nhận:**
+  - `PaymentPage.jsx` thiết lập cơ chế polling tự động (mỗi 3–5 giây) gọi `GET /v1/booking/orders/auth/:orderId` để kiểm tra trạng thái thanh toán ngay khi khách chuyển khoản thành công.
+  - Hiển thị Popup Modal thông báo *"Thanh toán thành công! Hệ thống đang chuyển hướng tới vé của bạn..."* kèm hiệu ứng trực quan và tự động điều hướng sang `/payment-done?order=${orderId}`.
+- **Trang xác nhận đơn hàng & Vé điện tử (`PaymentDonePage.jsx`):**
+  - Xây dựng giao diện `PaymentDonePage.jsx` và `PaymentDonePage.css` hoàn chỉnh.
+  - Hiển thị đầy đủ biên lai thanh toán: Mã đơn hàng, thời gian thanh toán, phương thức SePay (VietQR), thông tin sự kiện & suất diễn, chi tiết từng vé (hạng vé, vị trí ghế).
+  - Tích hợp hiển thị mã QR điện tử trực tuyến (`qrcode`) cho từng vé kèm chữ ký bảo mật HMAC-SHA256 (`qr_hash_signature`), sẵn sàng quét tại cổng sự kiện mà không cần vé giấy.
+
+### 6.2. Phân quyền và điều hướng Quản trị viên (UC21, UC38, UC39)
+- **Khắc phục lỗi điều hướng bị lặp (Self-redirect):**
+  - Sửa lỗi trong `AdminLayout.jsx` và `AppRoutes.jsx` khiến các nút bấm phê duyệt hồ sơ và duyệt sự kiện bị chuyển hướng ngược lại chính nó.
+  - Đồng bộ và bổ sung các route alias chuẩn:
+    - `/admin/organizer-requests` và `/admin/kyc` $\rightarrow$ `AdminKycPage.jsx`.
+    - `/admin/events/pending` $\rightarrow$ `AdminEventApprovalPage.jsx`.
+- **Cơ chế phân quyền RBAC & Xác thực Admin:**
+  - Đảm bảo middleware `requireRole(['ADMIN'])` và `attachUser` nhận diện chính xác token và quyền quản trị viên, loại bỏ hoàn toàn lỗi "Không có quyền thực hiện thao tác này" khi gọi `PUT /v1/admin/kyc/:id/approve` và `PUT /v1/admin/events/:id/approve`.
+- **Phê duyệt sự kiện kèm cấu hình hoa hồng & Hợp đồng tự động:**
+  - `AdminEventApprovalPage.jsx` hỗ trợ form duyệt trực quan: Admin bắt buộc nhập tỷ lệ hoa hồng (0–50%) và có thể bổ sung điều khoản bổ sung (`customTerms`).
+  - Khi duyệt thành công, sự kiện chuyển từ `PENDING` $\rightarrow$ `APPROVED`, đồng thời hệ thống tự động sinh bản ghi Hợp đồng điện tử (`EContract`) ở trạng thái `WAITING_SIGN`.
+
+### 6.3. Bổ sung Logging và khắc phục lỗi Tạo sự kiện (UC22)
+- **Truy vết lỗi tạo sự kiện chi tiết:**
+  - Thêm logging chi tiết ở cả Frontend (`CreateEventPage.jsx`) và Backend (`organizerEventController.js`) khi gặp lỗi tạo sự kiện (in rõ stack trace, mã lỗi Mongoose, lỗi upload multer/Cloudinary, lỗi định dạng dữ liệu).
+  - Giúp phát hiện nhanh các lỗi kết nối ECONNRESET / ECONNABORTED do payload hình ảnh vượt giới hạn hoặc mạng ngắt quãng.
+
+### 6.4. Hợp đồng điện tử E-Contract phía Nhà tổ chức (UC27, UC41)
+- **Khắc phục lỗi không hiển thị hợp đồng trên `/organizer/contracts`:**
+  - **Lệch cấu trúc dữ liệu trả về:** `contractController.js` ban đầu trả về `{ items: [...] }`, trong khi Frontend mong đợi `{ contracts: [...] }`. Đã chuẩn hóa controller trả về cả 2 thuộc tính `{ items, contracts }`.
+  - **Thiếu trường dữ liệu trong Serializer:** Bổ sung `id`, `contractNumber`, `createdAt`, `signedPdfUrl`, `termsHtml` vào hàm chuyển đổi dữ liệu (`contractToClient`), đảm bảo Frontend hiển thị đầy đủ thông tin hợp đồng.
+  - **Chuẩn hóa ID người dùng:** Cập nhật controller sử dụng `req.user?.id || req.user?._id` để tránh trường hợp `id` bị `undefined` khi giải mã token JWT từ các middleware khác nhau.
+- **Giao diện ký số HTML5 Canvas & Xuất file PDF tiếng Việt:**
+  - `OrganizerContractsPage.jsx` được nâng cấp toàn diện:
+    - Modal *"✍️ Xem & Ký số Hợp đồng"* hiển thị toàn bộ điều khoản pháp lý `termsHtml` (quy định rõ hình thức phân phối vé trực tuyến 100%, tỷ lệ hoa hồng, trách nhiệm hai bên).
+    - Tích hợp khung vẽ chữ ký điện tử trực tiếp trên trình duyệt (HTML5 Canvas) với các nút Xóa vẽ lại và Ký xác nhận.
+    - Gửi chữ ký dạng Base64 PNG lên backend, backend ghi nhận địa chỉ IP, thời gian ký, tính mã băm SHA-256, xuất file PDF hợp đồng có dấu tiếng Việt (DejaVu Sans) và chuyển trạng thái sự kiện sang `PUBLISHED`.
+    - Tích hợp nút *"📥 Tải PDF hợp đồng"* trực tiếp từ hệ thống thông qua `GET /v1/organizer/contracts/:id/pdf` (tự động stream hoặc redirect sang link tải an toàn).
+
+### 6.5. Đồng bộ kiến trúc hệ thống 100% Online Ticketing
+- **Mô hình kinh doanh thuần trực tuyến (Pure Online Ticketing):**
+  - Hệ thống được chuẩn hóa theo mô hình 100% phát hành và phân phối vé online, hoàn toàn không hỗ trợ bán vé giấy tại quầy (không có offline POS).
+  - Khách hàng sau khi thanh toán nhận vé điện tử kèm mã QR bảo mật HMAC-SHA256 lưu trong mục *Vé của tôi* (`MyTicketPage.jsx`) hoặc nhận qua email.
+  - Nhân viên soát vé tại cổng sử dụng máy quét mã QR trực tuyến trên thiết bị di động (`StaffCheckInPage.jsx` - UC35) để check-in khách vào sự kiện theo thời gian thực.

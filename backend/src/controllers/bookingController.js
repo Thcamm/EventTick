@@ -1,4 +1,4 @@
-const { Order, Ticket, StaffAssignment, RefundRequest, TicketTier, Event, EventSession, Seat, Payment } = require("../models");
+const { Order, Ticket, StaffAssignment, RefundRequest, TicketTier, Event, EventSession, Seat, Payment, ResaleListing } = require("../models");
 const bookingService = require("../services/bookingService");
 const { audit } = require("../utils/audit");
 
@@ -111,7 +111,13 @@ exports.myTickets = async (req, res) => {
     const tickets = await Ticket.find({ owner_id: req.user.id })
       .populate("event_id", "title banner_url venue_name")
       .populate("tier_id", "name price")
+      .populate("session_id", "name start_time end_time status")
       .sort({ _id: -1 });
+
+    // Tin bán lại của các vé đang bán / đã bán: để hiện trạng thái giữ chỗ & chi trả
+    const listings = await ResaleListing.find({ ticket_id: { $in: tickets.map((t) => t._id) } });
+    const listingByTicket = new Map(listings.map((l) => [String(l.ticket_id), l]));
+    const now = Date.now();
 
     const statusLabel = {
       VALID: "Chưa sử dụng",
@@ -122,20 +128,49 @@ exports.myTickets = async (req, res) => {
     };
 
     res.json({
-      tickets: tickets.map((t) => ({
-        _id: t._id,
-        orderId: t.order_id,
-        ticketCode: t.ticket_code,
-        qrHash: t.qr_hash_signature,
-        eventId: t.event_id?._id || t.event_id,
-        eventName: t.event_id?.title || "Sự kiện",
-        ticketName: t.tier_id?.name || "Hạng vé",
-        ticketPrice: t.tier_id?.price,
-        quantity: 1,
-        status: statusLabel[t.status] || t.status,
-        rawStatus: t.status,
-        purchaseDate: t._id.getTimestamp(),
-      })),
+      tickets: tickets.map((t) => {
+        const session = t.session_id;
+        const endMs = session?.end_time ? new Date(session.end_time).getTime() : null;
+        const startMs = session?.start_time ? new Date(session.start_time).getTime() : null;
+        // Thời hạn vé: UPCOMING (chưa diễn) | ONGOING (đang diễn) | EXPIRED (suất đã kết thúc / bị huỷ)
+        let validity = "UPCOMING";
+        if (session?.status === "CANCELLED") validity = "CANCELLED";
+        else if (endMs && now > endMs) validity = "EXPIRED";
+        else if (startMs && now >= startMs) validity = "ONGOING";
+
+        const l = listingByTicket.get(String(t._id));
+        const reservedNow = l && l.status === "RESERVED" && l.reserved_until && new Date(l.reserved_until).getTime() > now;
+        let resale = null;
+        if (l && ["ACTIVE", "RESERVED", "SOLD"].includes(l.status) && ["LISTED_RESALE", "RESOLD_INVALID"].includes(t.status)) {
+          resale = {
+            listingId: l._id,
+            status: reservedNow ? "RESERVED" : l.status === "RESERVED" ? "ACTIVE" : l.status,
+            resalePrice: l.resale_price,
+            reservedUntil: reservedNow ? l.reserved_until : undefined,
+            payoutStatus: l.payout_status,
+          };
+        }
+
+        return {
+          _id: t._id,
+          orderId: t.order_id,
+          ticketCode: t.ticket_code,
+          qrHash: t.qr_hash_signature,
+          eventId: t.event_id?._id || t.event_id,
+          eventName: t.event_id?.title || "Sự kiện",
+          ticketName: t.tier_id?.name || "Hạng vé",
+          ticketPrice: t.tier_id?.price,
+          quantity: 1,
+          status: statusLabel[t.status] || t.status,
+          rawStatus: t.status,
+          purchaseDate: t._id.getTimestamp(),
+          sessionName: session?.name,
+          sessionStart: session?.start_time,
+          sessionEnd: session?.end_time,
+          validity,
+          resale,
+        };
+      }),
     });
   } catch (err) {
     fail(res, err);
@@ -328,41 +363,7 @@ exports.checkInTicket = async (req, res) => {
   }
 };
 
-// POST /booking/orders/:orderId/refund (UC18)
-exports.requestRefund = async (req, res) => {
-  try {
-    const { ticketId, reason } = req.body;
-    const refundRequest = await bookingService.requestCustomerRefund({
-      orderId: req.params.orderId,
-      buyerId: req.user.id,
-      ticketId,
-      reason,
-    });
-
-    await audit(req, "REFUND_REQUEST_CREATE", "refund_requests", refundRequest._id, {
-      orderId: req.params.orderId,
-      ticketId,
-      amount: refundRequest.refund_amount,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Đã gửi yêu cầu hoàn tiền thành công. Ban quản trị sẽ xử lý yêu cầu của bạn.",
-      refundRequest: {
-        id: refundRequest._id,
-        orderId: refundRequest.order_id,
-        ticketId: refundRequest.ticket_id,
-        refundAmount: refundRequest.refund_amount,
-        status: refundRequest.status,
-        createdAt: refundRequest.created_at,
-      },
-    });
-  } catch (err) {
-    fail(res, err);
-  }
-};
-
-// GET /booking/refund-requests (UC18)
+// GET /booking/refund-requests — Lịch sử hoàn tiền của khách (chỉ phát sinh khi sự kiện bị huỷ)
 exports.getMyRefundRequests = async (req, res) => {
   try {
     const requests = await RefundRequest.find({ user_id: req.user.id })

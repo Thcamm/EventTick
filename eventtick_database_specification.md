@@ -112,8 +112,6 @@ erDiagram
         boolean has_seat_map
         boolean allow_resale
         decimal max_resale_markup_pct
-        boolean allow_refund
-        int refund_deadline_hours
         json custom_form_schema
         text legal_doc_url
         enum status "DRAFT, PENDING, APPROVED, PUBLISHED, CANCELLED, ENDED"
@@ -200,6 +198,7 @@ erDiagram
         uuid voucher_id FK
         varchar order_code UK "Not Null"
         enum order_type "PRIMARY, RESALE"
+        json resale_listing_ids "Nullable"
         json items_snapshot "Not Null (Lưu tier_id, quantity & seat_ids)"
         decimal subtotal_amount "Not Null"
         decimal discount_amount "Default 0"
@@ -241,7 +240,16 @@ erDiagram
         uuid buyer_order_id FK "Nullable"
         decimal original_price "Not Null"
         decimal resale_price "Not Null"
-        enum status "ACTIVE, SOLD, CANCELLED"
+        enum status "ACTIVE, RESERVED, SOLD, CANCELLED"
+        timestamp reserved_until
+        varchar bundle_code
+        boolean allow_partial
+        json payout_bank
+        decimal payout_amount
+        enum payout_status "NONE, PENDING, PAID"
+        varchar payout_ref
+        timestamp paid_out_at
+        uuid paid_out_by FK
         timestamp created_at
     }
     refund_requests {
@@ -249,7 +257,7 @@ erDiagram
         uuid order_id FK "Not Null"
         uuid ticket_id FK "Nullable"
         uuid user_id FK "Not Null"
-        enum refund_type "USER_CANCEL, EVENT_BULK_REFUND"
+        enum refund_type "EVENT_BULK_REFUND"
         decimal refund_amount "Not Null"
         text reason "Not Null"
         enum status "PROCESSING, COMPLETED, REJECTED"
@@ -318,7 +326,7 @@ erDiagram
 | 12 | `payments` | Booking & Payment | Giao dịch thanh toán trực tuyến (Quan hệ **`1-1`** với `orders`) |
 | 13 | `tickets` | Ticket & Check-in | Vé điện tử phát hành sau khi `orders` thanh toán thành công (`seat_id` Nullable) |
 | 14 | `resale_listings` | Ticket & Check-in | Bài đăng bán lại vé trên chợ chuyển nhượng chính thức |
-| 15 | `refund_requests` | Contract & Finance | Yêu cầu hoàn tiền cá nhân hoặc hoàn tiền hàng loạt |
+| 15 | `refund_requests` | Contract & Finance | Bản ghi hoàn tiền khi sự kiện bị huỷ (hoàn hàng loạt) |
 | 16 | `payout_settlements` | Contract & Finance | Đối soát doanh thu và giải ngân cho Nhà tổ chức (`1-1` với `events`) |
 | 17 | `reviews` | Ticket & Check-in | Đánh giá sự kiện gắn với chiếc vé đã tham dự (`1-1` với `tickets`) |
 | 18 | `wishlists_follows` | Event & Inventory | Lưu sự kiện yêu thích và theo dõi Nhà tổ chức của người dùng |
@@ -404,8 +412,6 @@ Thông tin sự kiện và cấu hình chính sách (UC22, UC23, UC26, UC39).
 | `has_seat_map` | `BOOLEAN` | `Default false` | `false`: **Sự kiện Vé đứng (GA)** \| `true`: **Có sơ đồ ghế** |
 | `allow_resale` | `BOOLEAN` | `Default false` | Cho phép đăng bán lại vé |
 | `max_resale_markup_pct` | `DECIMAL(5,2)` | `Default 0` | Trần `%` tăng giá tối đa khi bán lại |
-| `allow_refund` | `BOOLEAN` | `Default false` | Cho phép khách hủy/hoàn vé |
-| `refund_deadline_hours` | `INT` | `Default 48` | Số giờ tối thiểu trước sự kiện được phép hoàn vé |
 | `custom_form_schema` | `JSON` | `Nullable` | Cấu hình câu hỏi khảo sát khi mua vé |
 | `legal_doc_url` | `TEXT` | `Nullable` | Hồ sơ cấp phép biểu diễn |
 | `status` | `ENUM` | `Not Null` | `'DRAFT'`, `'PENDING'`, `'APPROVED'`, `'PUBLISHED'`, `'CANCELLED'`, `'ENDED'` |
@@ -530,7 +536,8 @@ Mã giảm giá của sự kiện (UC14, UC28).
 | **`session_id`** | **`UUID / ObjectId`** | **`FK, Not Null`** | **Suất diễn được đặt (`event_sessions.session_id`)** — 1 đơn hàng chỉ thuộc 1 suất |
 | `voucher_id` | `UUID / ObjectId` | `FK, Nullable` | Mã giảm giá áp dụng (`vouchers.voucher_id`) |
 | `order_code` | `VARCHAR(50)` | `UK, Not Null` | Mã đơn hàng duy nhất (VD: `ORD-20261108-001`) |
-| `order_type` | `ENUM` | `Not Null` | `'PRIMARY'` (Mua vé gốc), `'RESALE'` (Mua vé chuyển nhượng) |
+| `order_type` | `ENUM` | `Not Null` | `'PRIMARY'` (Mua vé gốc), `'RESALE'` (Mua vé chuyển nhượng — không có `voucher_id`, `discount_amount = 0`) |
+| `resale_listing_ids` | `ARRAY<ObjectId>` | `Nullable` | Chỉ với đơn `RESALE`: các tin bán lại được mua trong đơn (`resale_listings.listing_id`) |
 | **`items_snapshot`** | **`JSON`** | **`Not Null`** | **Mảng lưu cấu trúc đặt vé đứng & vé ngồi (Xem ví dụ JSON bên dưới)** |
 | `subtotal_amount` | `DECIMAL(12,2)` | `Not Null` | Tổng tiền tạm tính trước giảm giá |
 | `discount_amount` | `DECIMAL(12,2)` | `Default 0` | Số tiền được giảm giá |
@@ -607,30 +614,41 @@ Vé điện tử độc lập được sinh ra sau khi `orders` chuyển sang `P
 ### 3.13. Bảng `resale_listings`
 Quản lý vé đăng bán lại trên chợ chính thức (Quan hệ `1-1` với `tickets`) (UC19).
 
+Luồng: người bán đăng tin (`ACTIVE`, khai báo tài khoản nhận tiền) → người mua chọn vé, trả lời form, tạo đơn `orders.order_type = 'RESALE'` (tin chuyển `RESERVED` trong 10 phút, **không áp dụng voucher**) → người mua chuyển khoản cho EventTick qua SePay → webhook: vé cũ `RESOLD_INVALID`, cấp vé mới cho người mua, tin `SOLD`, `payout_status = 'PENDING'` → Admin chuyển tiền cho người bán và ghi `payout_status = 'PAID'`. Đơn hết hạn hoặc bị huỷ thì tin trở lại `ACTIVE`.
+
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
 | :--- | :--- | :--- | :--- |
 | `listing_id` | `UUID / ObjectId` | `PK` | Khóa chính tin đăng bán lại |
 | `ticket_id` | `UUID / ObjectId` | `FK, UK, Not Null` | Vé đem bán lại (`tickets.ticket_id`) |
 | `seller_id` | `UUID / ObjectId` | `FK, Not Null` | Người đăng bán (`users.user_id`) |
-| `buyer_order_id` | `UUID / ObjectId` | `FK, Nullable` | Đơn hàng của người mua lại (`orders.order_id`) |
+| `buyer_order_id` | `UUID / ObjectId` | `FK, Nullable` | Đơn hàng của người mua lại (`orders.order_id`), gán khi giữ chỗ |
 | `original_price` | `DECIMAL(12,2)` | `Not Null` | Giá gốc của vé |
-| `resale_price` | `DECIMAL(12,2)` | `Not Null` | Giá đăng bán lại |
-| `status` | `ENUM` | `Not Null` | `'ACTIVE'`, `'SOLD'`, `'CANCELLED'` |
+| `resale_price` | `DECIMAL(12,2)` | `Not Null` | Giá đăng bán lại (tối đa 110% giá gốc) |
+| `status` | `ENUM` | `Not Null` | `'ACTIVE'`, `'RESERVED'`, `'SOLD'`, `'CANCELLED'` |
+| `reserved_until` | `TIMESTAMP` | `Nullable` | Hạn giữ chỗ khi có người đang thanh toán |
+| `bundle_code` | `VARCHAR(20)` | `Nullable, Index` | Mã gói `RSL…`: các vé cùng hạng/suất đăng chung 1 lần |
+| `allow_partial` | `BOOLEAN` | `Default true` | `true` = Bán lẻ; `false` = Không bán lẻ (người mua phải mua hết gói) |
+| `payout_bank` | `JSON` | `Nullable` | Tài khoản nhận tiền của người bán `{ bank_name, account_no, account_holder }` |
+| `payout_amount` | `DECIMAL(12,2)` | `Nullable` | Số tiền phải chi trả cho người bán |
+| `payout_status` | `ENUM` | `Default 'NONE'` | `'NONE'`, `'PENDING'` (chờ Admin chuyển), `'PAID'` |
+| `payout_ref` | `VARCHAR(255)` | `Nullable` | Mã giao dịch ngân hàng Admin đã chuyển |
+| `paid_out_at` | `TIMESTAMP` | `Nullable` | Thời điểm chi trả |
+| `paid_out_by` | `UUID / ObjectId` | `FK, Nullable` | Admin thực hiện chi trả |
 | `created_at` | `TIMESTAMP` | `Not Null` | Thời gian đăng bán |
 
 ### 3.14. Bảng `refund_requests`
-Yêu cầu hoàn tiền đơn hàng/vé (UC18, UC43).
+Bản ghi hoàn tiền **chỉ khi sự kiện bị huỷ** (UC23, UC43). Hệ thống **không hỗ trợ khách tự hoàn vé lẻ**; khách muốn đổi ý thì đăng bán lại vé (UC19).
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
 | :--- | :--- | :--- | :--- |
-| `refund_id` | `UUID / ObjectId` | `PK` | Khóa chính yêu cầu hoàn tiền |
-| `order_id` | `UUID / ObjectId` | `FK, Not Null` | Đơn hàng yêu cầu hoàn (`orders.order_id`) |
-| `ticket_id` | `UUID / ObjectId` | `FK, Nullable` | Vé cụ thể yêu cầu hoàn (nếu hoàn lẻ) |
-| `user_id` | `UUID / ObjectId` | `FK, Not Null` | Khách hàng yêu cầu (`users.user_id`) |
-| `refund_type` | `ENUM` | `Not Null` | `'USER_CANCEL'`, `'EVENT_BULK_REFUND'` |
+| `refund_id` | `UUID / ObjectId` | `PK` | Khóa chính bản ghi hoàn tiền |
+| `order_id` | `UUID / ObjectId` | `FK, Not Null` | Đơn hàng được hoàn (`orders.order_id`) |
+| `ticket_id` | `UUID / ObjectId` | `FK, Nullable` | Không dùng (hoàn theo cả đơn) |
+| `user_id` | `UUID / ObjectId` | `FK, Not Null` | Người mua được hoàn (`users.user_id`) |
+| `refund_type` | `ENUM` | `Not Null` | `'EVENT_BULK_REFUND'` |
 | `refund_amount` | `DECIMAL(12,2)` | `Not Null` | Số tiền hoàn trả |
-| `reason` | `TEXT` | `Not Null` | Lý do yêu cầu hoàn tiền |
-| `status` | `ENUM` | `Not Null` | `'PROCESSING'`, `'COMPLETED'`, `'REJECTED'` |
+| `reason` | `TEXT` | `Not Null` | Lý do huỷ sự kiện |
+| `status` | `ENUM` | `Not Null` | `'COMPLETED'` (giữ `'PROCESSING'`, `'REJECTED'` cho dữ liệu cũ) |
 | `processed_at` | `TIMESTAMP` | `Nullable` | Thời điểm hoàn tiền thành công |
 
 ### 3.15. Bảng `payout_settlements`

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { axiosInstance } from "@/services/apiClient";
 import { authService } from "@/services/auth.service";
+import { useAuth } from "@/context/AuthContext";
+import { PATHS } from "@/routes/paths";
 import "./AccountPage.css";
 
 const AccountPage = () => {
+  const { user } = useAuth();
   const [defaultName, setDefaultName] = useState("");
   const [defaultFirstName, setDefaultFirstName] = useState("");
   const [defaultLastName, setDefaultLastName] = useState("");
@@ -196,8 +199,78 @@ const AccountPage = () => {
           </div>
         </div>
         <h2>Tài khoản của {defaultName || [defaultLastName, defaultFirstName].filter(Boolean).join(" ") || userName}</h2>
+        
+        <ul style={{ listStyle: "none", padding: 0, marginTop: "24px" }}>
+          <li style={{ padding: "10px 12px", borderRadius: "6px", backgroundColor: "#3a3a3a", fontWeight: "bold", marginBottom: "8px", color: "#fff" }}>
+            👤 Thông tin tài khoản
+          </li>
+          <li style={{ padding: "10px 12px", borderRadius: "6px", marginBottom: "8px" }}>
+            <Link to={PATHS.USER_TICKETS} style={{ color: "#ddd", textDecoration: "none", display: "flex", alignItems: "center", gap: "8px" }}>
+              🎟 Vé của tôi
+            </Link>
+          </li>
+          <li style={{ padding: "10px 12px", borderRadius: "6px", marginBottom: "8px" }}>
+            <Link to={PATHS.RESALE_MARKET} style={{ color: "#ddd", textDecoration: "none", display: "flex", alignItems: "center", gap: "8px" }}>
+              🔄 Chợ vé bán lại
+            </Link>
+          </li>
+          <li style={{ padding: "10px 12px", borderRadius: "6px", marginTop: "16px", borderTop: "1px solid #444", paddingTop: "16px" }}>
+            <Link
+              to={PATHS.ORGANIZER_KYC}
+              style={{
+                color: "#ff6b81",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontWeight: 600,
+              }}
+            >
+              🌟 {user?.role === "ORGANIZER" || user?.role === "ADMIN" ? "Hồ sơ KYC BTC" : "Đăng ký làm Nhà tổ chức"}
+            </Link>
+          </li>
+        </ul>
       </div>
       <div className="account-page-main">
+        {user?.role === "CUSTOMER" && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(255, 66, 78, 0.15) 0%, rgba(255, 107, 107, 0.05) 100%)",
+            border: "1px solid rgba(255, 66, 78, 0.35)",
+            borderRadius: "8px",
+            padding: "16px 20px",
+            marginBottom: "24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: "16px", color: "#fff", marginBottom: "4px" }}>
+                🌟 Bạn muốn tạo sự kiện và bán vé online trên EventTick?
+              </div>
+              <div style={{ fontSize: "13px", color: "#bbb" }}>
+                Nộp hồ sơ định danh KYC để được cấp quyền Nhà tổ chức, ký hợp đồng điện tử và quản lý sự kiện.
+              </div>
+            </div>
+            <Link
+              to={PATHS.ORGANIZER_KYC}
+              style={{
+                backgroundColor: "#ff424e",
+                color: "#fff",
+                padding: "8px 18px",
+                borderRadius: "6px",
+                textDecoration: "none",
+                fontWeight: 600,
+                fontSize: "14px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Đăng ký ngay &rarr;
+            </Link>
+          </div>
+        )}
+
         <h1>Thông tin tài khoản</h1>
 
         <div className="account-page-form-group">

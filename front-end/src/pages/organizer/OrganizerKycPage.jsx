@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import apiClient from "@/services/apiClient";
+import { useAuth } from "@/context/AuthContext";
+import { PATHS } from "@/routes/paths";
 import LoadingSpinner from "@/components/common/LoadingSpinner";
 import "./OrganizerKycPage.css";
 
 const OrganizerKycPage = () => {
+  const { checkAuth } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +37,9 @@ const OrganizerKycPage = () => {
         setBankName(p.bankName || "");
         setBankAccountNo(p.bankAccountNo || "");
         setBankAccountHolder(p.bankAccountHolder || "");
+        if (p.kycStatus === "VERIFIED") {
+          checkAuth?.();
+        }
       }
     } catch (err) {
       setError(err.response?.data?.message || "Không thể tải thông tin hồ sơ KYC");
@@ -130,6 +137,52 @@ const OrganizerKycPage = () => {
                 {profile.verifiedAt ? new Date(profile.verifiedAt).toLocaleDateString("vi-VN") : "gần đây"}.
                 Bạn có đầy đủ quyền hạn để đăng tải sự kiện, ký hợp đồng hoa hồng và bán vé online.
               </p>
+              <div style={{ marginTop: "14px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <Link
+                  to={PATHS.ADMIN_CREATE_EVENT}
+                  style={{
+                    backgroundColor: "#22c55e",
+                    color: "#fff",
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                    fontSize: "14px",
+                    display: "inline-block",
+                  }}
+                >
+                  ➕ Tạo sự kiện ngay
+                </Link>
+                <Link
+                  to={PATHS.ORGANIZER_CONTRACTS}
+                  style={{
+                    backgroundColor: "#3b82f6",
+                    color: "#fff",
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                    fontSize: "14px",
+                    display: "inline-block",
+                  }}
+                >
+                  📝 Ký hợp đồng hoa hồng
+                </Link>
+                <Link
+                  to={PATHS.ADMIN_MY_EVENTS}
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.15)",
+                    color: "#fff",
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    fontSize: "14px",
+                    display: "inline-block",
+                  }}
+                >
+                  📋 Quản lý sự kiện
+                </Link>
+              </div>
             </div>
           </div>
         )}

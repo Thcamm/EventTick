@@ -22,6 +22,8 @@ const schema = new Schema(
     voucher_id: ref("Voucher"),
     order_code: { type: String, required: true, maxlength: 50 },
     order_type: { type: String, enum: ["PRIMARY", "RESALE"], default: "PRIMARY", required: true },
+    // Đơn RESALE: các tin bán lại được mua trong đơn (mỗi tin = 1 vé)
+    resale_listing_ids: { type: [Schema.Types.ObjectId], default: undefined },
     items_snapshot: {
       type: [itemSchema],
       validate: { validator: (v) => Array.isArray(v) && v.length > 0, message: "Đơn hàng phải có ít nhất 1 hạng vé" },
