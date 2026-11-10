@@ -44,7 +44,6 @@ router.get("/events/:id/export/orders", ev.exportOrders);
 router.get("/events/:id/payout-summary", ev.getPayoutSummary);
 router.post("/events/:id/payout/request", ev.requestPayout);
 router.get("/payouts", ev.listPayouts);
-
 // Suất diễn (chỉ khi DRAFT)
 router.post("/events/:id/sessions", ev.addSession);
 router.put("/sessions/:sessionId", ev.updateSession);
