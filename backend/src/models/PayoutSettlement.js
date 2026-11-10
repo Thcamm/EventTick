@@ -20,4 +20,3 @@ const schema = new Schema(
 );
 
 module.exports = mongoose.model("PayoutSettlement", schema, "payout_settlements");
-s
