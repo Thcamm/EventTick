@@ -1,17 +1,6 @@
-const {
-  Order,
-  Ticket,
-  StaffAssignment,
-  RefundRequest,
-  TicketTier,
-  Event,
-  EventSession,
-  Seat,
-  Payment,
-  ResaleListing,
-} = require('../models');
-const bookingService = require('../services/bookingService');
-const { audit } = require('../utils/audit');
+const { Order, Ticket, StaffAssignment, RefundRequest, TicketTier, Event, EventSession, Seat, Payment, ResaleListing } = require("../models");
+const bookingService = require("../services/bookingService");
+const { audit } = require("../utils/audit");
 
 function fail(res, err) {
   res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -49,13 +38,13 @@ exports.createBooking = async (req, res) => {
     const eventId = req.params.eventId || req.body.eventId;
     const rawItems = req.body.cartItems || req.body.items;
     const voucherCode = req.body.voucherCode || req.body.voucher;
-    const sessionId = req.body.sessionId || (Array.isArray(rawItems) && rawItems[0]?.sessionId);
-    const attendeeFormAnswers =
-      req.body.attendeeFormAnswers || req.body.attendee_form_answers || req.body.attendeeAnswers;
+    const sessionId =
+      req.body.sessionId || (Array.isArray(rawItems) && rawItems[0]?.sessionId);
+    const attendeeFormAnswers = req.body.attendeeFormAnswers || req.body.attendee_form_answers || req.body.attendeeAnswers;
     const vatInvoiceInfo = req.body.vatInvoiceInfo || req.body.vat_invoice_info || req.body.vatInfo;
 
     if (!eventId || !sessionId || !Array.isArray(rawItems) || rawItems.length === 0) {
-      return res.status(400).json({ success: false, message: 'Thiếu thông tin đặt vé' });
+      return res.status(400).json({ success: false, message: "Thiếu thông tin đặt vé" });
     }
 
     const order = await bookingService.createOrderHold({
@@ -86,8 +75,7 @@ exports.createBooking = async (req, res) => {
 // PUT /booking/orders/:orderId/checkout-info (UC13, UC16)
 exports.updateCheckoutInfo = async (req, res) => {
   try {
-    const attendeeFormAnswers =
-      req.body.attendeeFormAnswers || req.body.attendee_form_answers || req.body.attendeeAnswers;
+    const attendeeFormAnswers = req.body.attendeeFormAnswers || req.body.attendee_form_answers || req.body.attendeeAnswers;
     const vatInvoiceInfo = req.body.vatInvoiceInfo || req.body.vat_invoice_info || req.body.vatInfo;
 
     const order = await bookingService.updateCheckoutInfo({
@@ -99,7 +87,7 @@ exports.updateCheckoutInfo = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Đã cập nhật thông tin đơn hàng',
+      message: "Đã cập nhật thông tin đơn hàng",
       order: orderToClient(order),
     });
   } catch (err) {
@@ -111,7 +99,7 @@ exports.updateCheckoutInfo = async (req, res) => {
 exports.cancelOrder = async (req, res) => {
   try {
     const order = await bookingService.cancelPendingOrder({ orderId: req.params.orderId, buyerId: req.user.id });
-    res.json({ success: true, message: 'Đã huỷ đơn hàng', status: order?.status });
+    res.json({ success: true, message: "Đã huỷ đơn hàng", status: order?.status });
   } catch (err) {
     fail(res, err);
   }
@@ -121,9 +109,9 @@ exports.cancelOrder = async (req, res) => {
 exports.myTickets = async (req, res) => {
   try {
     const tickets = await Ticket.find({ owner_id: req.user.id })
-      .populate('event_id', 'title banner_url venue_name')
-      .populate('tier_id', 'name price')
-      .populate('session_id', 'name start_time end_time status')
+      .populate("event_id", "title banner_url venue_name")
+      .populate("tier_id", "name price")
+      .populate("session_id", "name start_time end_time status")
       .sort({ _id: -1 });
 
     // Tin bán lại của các vé đang bán / đã bán: để hiện trạng thái giữ chỗ & chi trả
@@ -132,11 +120,11 @@ exports.myTickets = async (req, res) => {
     const now = Date.now();
 
     const statusLabel = {
-      VALID: 'Chưa sử dụng',
-      USED: 'Đã check-in',
-      LISTED_RESALE: 'Đang bán lại',
-      RESOLD_INVALID: 'Đã chuyển nhượng',
-      REFUNDED: 'Đã hoàn tiền',
+      VALID: "Chưa sử dụng",
+      USED: "Đã check-in",
+      LISTED_RESALE: "Đang bán lại",
+      RESOLD_INVALID: "Đã chuyển nhượng",
+      REFUNDED: "Đã hoàn tiền",
     };
 
     res.json({
@@ -145,23 +133,18 @@ exports.myTickets = async (req, res) => {
         const endMs = session?.end_time ? new Date(session.end_time).getTime() : null;
         const startMs = session?.start_time ? new Date(session.start_time).getTime() : null;
         // Thời hạn vé: UPCOMING (chưa diễn) | ONGOING (đang diễn) | EXPIRED (suất đã kết thúc / bị huỷ)
-        let validity = 'UPCOMING';
-        if (session?.status === 'CANCELLED') validity = 'CANCELLED';
-        else if (endMs && now > endMs) validity = 'EXPIRED';
-        else if (startMs && now >= startMs) validity = 'ONGOING';
+        let validity = "UPCOMING";
+        if (session?.status === "CANCELLED") validity = "CANCELLED";
+        else if (endMs && now > endMs) validity = "EXPIRED";
+        else if (startMs && now >= startMs) validity = "ONGOING";
 
         const l = listingByTicket.get(String(t._id));
-        const reservedNow =
-          l && l.status === 'RESERVED' && l.reserved_until && new Date(l.reserved_until).getTime() > now;
+        const reservedNow = l && l.status === "RESERVED" && l.reserved_until && new Date(l.reserved_until).getTime() > now;
         let resale = null;
-        if (
-          l &&
-          ['ACTIVE', 'RESERVED', 'SOLD'].includes(l.status) &&
-          ['LISTED_RESALE', 'RESOLD_INVALID'].includes(t.status)
-        ) {
+        if (l && ["ACTIVE", "RESERVED", "SOLD"].includes(l.status) && ["LISTED_RESALE", "RESOLD_INVALID"].includes(t.status)) {
           resale = {
             listingId: l._id,
-            status: reservedNow ? 'RESERVED' : l.status === 'RESERVED' ? 'ACTIVE' : l.status,
+            status: reservedNow ? "RESERVED" : l.status === "RESERVED" ? "ACTIVE" : l.status,
             resalePrice: l.resale_price,
             reservedUntil: reservedNow ? l.reserved_until : undefined,
             payoutStatus: l.payout_status,
@@ -174,8 +157,8 @@ exports.myTickets = async (req, res) => {
           ticketCode: t.ticket_code,
           qrHash: t.qr_hash_signature,
           eventId: t.event_id?._id || t.event_id,
-          eventName: t.event_id?.title || 'Sự kiện',
-          ticketName: t.tier_id?.name || 'Hạng vé',
+          eventName: t.event_id?.title || "Sự kiện",
+          ticketName: t.tier_id?.name || "Hạng vé",
           ticketPrice: t.tier_id?.price,
           quantity: 1,
           status: statusLabel[t.status] || t.status,
@@ -199,20 +182,19 @@ exports.createPaymentIntent = async (req, res) => {
   try {
     // Thanh toán GIẢ LẬP (đánh dấu đã trả không cần chuyển tiền): chỉ để test.
     // Production phải đặt ENABLE_DEMO_PAYMENT=false; thanh toán thật đi qua webhook SePay.
-    if (process.env.ENABLE_DEMO_PAYMENT === 'false') {
+    if (process.env.ENABLE_DEMO_PAYMENT === "false") {
       return res.status(403).json({
         success: false,
-        message:
-          'Thanh toán demo đã tắt. Vui lòng chuyển khoản theo hướng dẫn (GET /v1/payment/orders/:orderId/instructions).',
+        message: "Thanh toán demo đã tắt. Vui lòng chuyển khoản theo hướng dẫn (GET /v1/payment/orders/:orderId/instructions).",
       });
     }
     const { orderId, provider } = req.body;
-    if (!orderId) return res.status(400).json({ success: false, message: 'Thiếu mã đơn hàng' });
-    if (!req.user) return res.status(401).json({ success: false, message: 'Bạn cần đăng nhập' });
+    if (!orderId) return res.status(400).json({ success: false, message: "Thiếu mã đơn hàng" });
+    if (!req.user) return res.status(401).json({ success: false, message: "Bạn cần đăng nhập" });
 
-    const gateway = ['VNPAY', 'VIETQR', 'MOMO', 'STRIPE'].includes(String(provider).toUpperCase())
+    const gateway = ["VNPAY", "VIETQR", "MOMO", "STRIPE"].includes(String(provider).toUpperCase())
       ? String(provider).toUpperCase()
-      : 'VNPAY';
+      : "VNPAY";
 
     const { order, tickets } = await bookingService.confirmPaymentAndIssueTickets({
       orderId,
@@ -223,7 +205,7 @@ exports.createPaymentIntent = async (req, res) => {
     res.json({
       success: true,
       alreadyPaid: true,
-      clientSecret: 'demo_client_secret',
+      clientSecret: "demo_client_secret",
       order: orderToClient(order),
       orderItems: orderItemsToClient(order),
       tickets,
@@ -236,25 +218,23 @@ exports.createPaymentIntent = async (req, res) => {
 // GET /booking/orders/auth/:orderId — trạng thái đơn + (khi đã thanh toán) biên nhận và danh sách vé để hiện trang thành công
 exports.getOrder = async (req, res) => {
   try {
-    if (!req.user) return res.status(401).json({ success: false, message: 'Bạn cần đăng nhập' });
+    if (!req.user) return res.status(401).json({ success: false, message: "Bạn cần đăng nhập" });
     const order = await Order.findById(req.params.orderId);
     if (!order || order.buyer_id.toString() !== req.user.id) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+      return res.status(404).json({ success: false, message: "Không tìm thấy đơn hàng" });
     }
-    const status = order.status === 'PAID' ? 'CONFIRMED' : order.status;
+    const status = order.status === "PAID" ? "CONFIRMED" : order.status;
     const body = { success: true, status, order: orderToClient(order) };
 
-    if (order.status === 'PAID') {
+    if (order.status === "PAID") {
       const [tickets, event, session, payment] = await Promise.all([
         Ticket.find({ order_id: order._id }).sort({ _id: 1 }),
-        Event.findById(order.event_id).select('title banner_url thumbnail_url venue_name city'),
-        EventSession.findById(order.session_id).select('name start_time end_time'),
-        Payment.findOne({ order_id: order._id }).select('gateway amount paid_at transaction_ref'),
+        Event.findById(order.event_id).select("title banner_url thumbnail_url venue_name city"),
+        EventSession.findById(order.session_id).select("name start_time end_time"),
+        Payment.findOne({ order_id: order._id }).select("gateway amount paid_at transaction_ref"),
       ]);
       const seatIds = tickets.map((t) => t.seat_id).filter(Boolean);
-      const seats = seatIds.length
-        ? await Seat.find({ _id: { $in: seatIds } }).select('section_name row_label seat_number')
-        : [];
+      const seats = seatIds.length ? await Seat.find({ _id: { $in: seatIds } }).select("section_name row_label seat_number") : [];
       const seatById = new Map(seats.map((x) => [String(x._id), x]));
       const tierName = new Map((order.items_snapshot || []).map((it) => [String(it.tier_id), it.tier_name]));
       body.tickets = tickets.map((t) => {
@@ -264,29 +244,15 @@ exports.getOrder = async (req, res) => {
           ticketCode: t.ticket_code,
           qrHash: t.qr_hash_signature,
           status: t.status,
-          tierName: tierName.get(String(t.tier_id)) || 'Vé',
+          tierName: tierName.get(String(t.tier_id)) || "Vé",
           seat: seat ? { section: seat.section_name, row: seat.row_label, number: seat.seat_number } : null,
         };
       });
       body.event = event && {
-        _id: event._id,
-        title: event.title,
-        bannerUrl: event.thumbnail_url || event.banner_url,
-        venueName: event.venue_name,
-        city: event.city,
+        _id: event._id, title: event.title, bannerUrl: event.thumbnail_url || event.banner_url, venueName: event.venue_name, city: event.city,
       };
-      body.session = session && {
-        _id: session._id,
-        name: session.name,
-        startTime: session.start_time,
-        endTime: session.end_time,
-      };
-      body.payment = payment && {
-        gateway: payment.gateway,
-        amount: payment.amount,
-        paidAt: payment.paid_at,
-        transactionRef: payment.transaction_ref,
-      };
+      body.session = session && { _id: session._id, name: session.name, startTime: session.start_time, endTime: session.end_time };
+      body.payment = payment && { gateway: payment.gateway, amount: payment.amount, paidAt: payment.paid_at, transactionRef: payment.transaction_ref };
     } else {
       body.tickets = [];
     }
@@ -299,45 +265,41 @@ exports.getOrder = async (req, res) => {
 // POST /booking/check-in (STAFF/ADMIN quét vé QR trực tuyến)
 exports.checkInTicket = async (req, res) => {
   try {
-    const rawInput = req.body?.ticketCode || req.body?.qrData || '';
-    if (!rawInput) return res.status(400).json({ success: false, message: 'Thiếu mã vé QR' });
+    const rawInput = req.body?.ticketCode || req.body?.qrData || "";
+    if (!rawInput) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
 
-    let code = '';
-    let providedHash = req.body?.qrHash || req.body?.signature || '';
+    let code = "";
+    let providedHash = req.body?.qrHash || req.body?.signature || "";
 
     // Hỗ trợ payload QR dạng JSON {"ticketCode":"...","qrHash":"..."} hoặc chuỗi ghép "TK-XXX.hash" / "TK-XXX|hash"
     const trimmed = String(rawInput).trim();
-    if (trimmed.startsWith('{')) {
+    if (trimmed.startsWith("{")) {
       try {
         const parsed = JSON.parse(trimmed);
-        code = String(parsed.ticketCode || parsed.code || '')
-          .trim()
-          .toUpperCase();
-        if (!providedHash) providedHash = String(parsed.qrHash || parsed.signature || '').trim();
+        code = String(parsed.ticketCode || parsed.code || "").trim().toUpperCase();
+        if (!providedHash) providedHash = String(parsed.qrHash || parsed.signature || "").trim();
       } catch {
-        return res.status(400).json({ success: false, message: 'Dữ liệu QR không hợp lệ' });
+        return res.status(400).json({ success: false, message: "Dữ liệu QR không hợp lệ" });
       }
     } else if (/[.|:]/.test(trimmed)) {
-      const [cPart, hPart] = trimmed.split(/[.|:]/);
-      code = String(cPart || '')
-        .trim()
-        .toUpperCase();
+      const [cPart, hPart] = trimmed.split(/[.|:]/) ;
+      code = String(cPart || "").trim().toUpperCase();
       if (!providedHash && hPart) providedHash = String(hPart).trim();
     } else {
       code = trimmed.toUpperCase();
     }
 
-    if (!code) return res.status(400).json({ success: false, message: 'Thiếu mã vé QR' });
+    if (!code) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
 
     const ticket = await Ticket.findOne({ ticket_code: code })
-      .populate('event_id', 'title venue_name')
-      .populate('tier_id', 'name');
-    if (!ticket) return res.status(404).json({ success: false, message: 'Mã vé không hợp lệ' });
+      .populate("event_id", "title venue_name")
+      .populate("tier_id", "name");
+    if (!ticket) return res.status(404).json({ success: false, message: "Mã vé không hợp lệ" });
 
     // Xác thực chữ ký bảo mật HMAC-SHA256 của vé (chống vé giả / can thiệp DB hoặc QR giả mạo)
-    const crypto = require('crypto');
+    const crypto = require("crypto");
     const expectedSig = bookingService.signTicket(ticket.ticket_code);
-    const storedSig = String(ticket.qr_hash_signature || '');
+    const storedSig = String(ticket.qr_hash_signature || "");
     const safeEq = (a, b) => {
       const ba = Buffer.from(String(a));
       const bb = Buffer.from(String(b));
@@ -346,49 +308,49 @@ exports.checkInTicket = async (req, res) => {
     if (!storedSig || !safeEq(storedSig, expectedSig)) {
       return res.status(400).json({
         success: false,
-        message: 'Chữ ký bảo mật của vé không hợp lệ (vé có dấu hiệu bị can thiệp)',
+        message: "Chữ ký bảo mật của vé không hợp lệ (vé có dấu hiệu bị can thiệp)",
       });
     }
     if (providedHash && !safeEq(String(providedHash).trim().toLowerCase(), expectedSig.toLowerCase())) {
       return res.status(400).json({
         success: false,
-        message: 'Chữ ký QR không khớp (mã QR giả mạo hoặc đã bị thu hồi)',
+        message: "Chữ ký QR không khớp (mã QR giả mạo hoặc đã bị thu hồi)",
       });
     }
 
     // Chỉ ADMIN hoặc STAFF được phân công cho sự kiện này mới được soát vé
-    if (req.user.role !== 'ADMIN') {
+    if (req.user.role !== "ADMIN") {
       const assigned = await StaffAssignment.findOne({
         staff_user_id: req.user.id,
         event_id: ticket.event_id._id,
         is_active: true,
       });
       if (!assigned) {
-        return res.status(403).json({ success: false, message: 'Bạn không được phân công soát vé sự kiện này' });
+        return res.status(403).json({ success: false, message: "Bạn không được phân công soát vé sự kiện này" });
       }
     }
 
-    if (ticket.status === 'USED') {
+    if (ticket.status === "USED") {
       return res.status(409).json({
         success: false,
-        message: `Vé này ĐÃ ĐƯỢC SỬ DỤNG vào lúc ${new Date(ticket.checked_in_at).toLocaleString('vi-VN')}`,
+        message: `Vé này ĐÃ ĐƯỢC SỬ DỤNG vào lúc ${new Date(ticket.checked_in_at).toLocaleString("vi-VN")}`,
       });
     }
-    if (ticket.status !== 'VALID') {
+    if (ticket.status !== "VALID") {
       return res.status(400).json({ success: false, message: `Vé không hợp lệ (${ticket.status})` });
     }
 
     // Atomic: chỉ 1 lần quét thành công
     const updated = await Ticket.findOneAndUpdate(
-      { _id: ticket._id, status: 'VALID' },
-      { status: 'USED', checked_in_at: new Date(), checked_in_by: req.user.id },
+      { _id: ticket._id, status: "VALID" },
+      { status: "USED", checked_in_at: new Date(), checked_in_by: req.user.id },
       { new: true },
     );
-    if (!updated) return res.status(409).json({ success: false, message: 'Vé vừa được sử dụng' });
+    if (!updated) return res.status(409).json({ success: false, message: "Vé vừa được sử dụng" });
 
     res.json({
       success: true,
-      message: 'Check-in thành công!',
+      message: "Check-in thành công!",
       ticket: {
         ticketCode: updated.ticket_code,
         eventName: ticket.event_id?.title,
@@ -406,11 +368,11 @@ exports.getMyRefundRequests = async (req, res) => {
   try {
     const requests = await RefundRequest.find({ user_id: req.user.id })
       .populate({
-        path: 'order_id',
-        select: 'order_code total_amount event_id',
-        populate: { path: 'event_id', select: 'title banner_url' },
+        path: "order_id",
+        select: "order_code total_amount event_id",
+        populate: { path: "event_id", select: "title banner_url" },
       })
-      .populate('ticket_id', 'ticket_code')
+      .populate("ticket_id", "ticket_code")
       .sort({ created_at: -1 });
 
     res.json({
@@ -439,10 +401,10 @@ exports.getStaffCheckInStats = async (req, res) => {
 
     // Phân quyền: ADMIN hoặc ORGANIZER của sự kiện hoặc STAFF có phân công
     const event = await Event.findById(eventId);
-    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
+    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
 
     const isOrganizer = String(event.organizer_id) === String(req.user.id);
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = req.user.role === "ADMIN";
 
     if (!isAdmin && !isOrganizer) {
       const assigned = await StaffAssignment.findOne({
@@ -451,13 +413,13 @@ exports.getStaffCheckInStats = async (req, res) => {
         is_active: true,
       });
       if (!assigned) {
-        return res.status(403).json({ success: false, message: 'Bạn không có quyền xem thống kê soát vé sự kiện này' });
+        return res.status(403).json({ success: false, message: "Bạn không có quyền xem thống kê soát vé sự kiện này" });
       }
     }
 
     const [totalValidAndUsed, checkedInCount, tiers] = await Promise.all([
-      Ticket.countDocuments({ event_id: eventId, status: { $in: ['VALID', 'USED'] } }),
-      Ticket.countDocuments({ event_id: eventId, status: 'USED' }),
+      Ticket.countDocuments({ event_id: eventId, status: { $in: ["VALID", "USED"] } }),
+      Ticket.countDocuments({ event_id: eventId, status: "USED" }),
       TicketTier.find({ event_id: eventId }),
     ]);
 
@@ -468,8 +430,8 @@ exports.getStaffCheckInStats = async (req, res) => {
     const tierStats = await Promise.all(
       tiers.map(async (t) => {
         const [totalTier, usedTier] = await Promise.all([
-          Ticket.countDocuments({ event_id: eventId, tier_id: t._id, status: { $in: ['VALID', 'USED'] } }),
-          Ticket.countDocuments({ event_id: eventId, tier_id: t._id, status: 'USED' }),
+          Ticket.countDocuments({ event_id: eventId, tier_id: t._id, status: { $in: ["VALID", "USED"] } }),
+          Ticket.countDocuments({ event_id: eventId, tier_id: t._id, status: "USED" }),
         ]);
         return {
           tierId: t._id,
@@ -482,9 +444,9 @@ exports.getStaffCheckInStats = async (req, res) => {
     );
 
     // Danh sách 10 lượt soát vé gần nhất
-    const recentCheckIns = await Ticket.find({ event_id: eventId, status: 'USED' })
-      .populate('tier_id', 'name')
-      .populate('checked_in_by', 'full_name username')
+    const recentCheckIns = await Ticket.find({ event_id: eventId, status: "USED" })
+      .populate("tier_id", "name")
+      .populate("checked_in_by", "full_name username")
       .sort({ checked_in_at: -1 })
       .limit(10);
 

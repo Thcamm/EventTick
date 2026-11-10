@@ -1,15 +1,15 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
 // Cấu hình transporter linh hoạt
 let transporter;
 
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
   transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true', // true cho port 465, false cho 587
+    secure: process.env.SMTP_SECURE === "true", // true cho port 465, false cho 587
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -20,19 +20,18 @@ if (process.env.SMTP_USER && process.env.SMTP_PASS) {
   transporter = null;
 }
 
-const FROM_EMAIL =
-  process.env.EMAIL_FROM || `"Hệ thống Ticketerra" <${process.env.SMTP_USER || 'no-reply@ticketerra.com'}>`;
+const FROM_EMAIL = process.env.EMAIL_FROM || `"Hệ thống Ticketerra" <${process.env.SMTP_USER || 'no-reply@ticketerra.com'}>`;
 
 /**
  * Gửi email kích hoạt tài khoản
  */
-async function sendVerificationEmail(toEmail, token, name = 'bạn') {
+async function sendVerificationEmail(toEmail, token, name = "bạn") {
   const verifyUrl = `${CLIENT_URL}/verify-email?token=${token}`;
 
   const mailOptions = {
     from: FROM_EMAIL,
     to: toEmail,
-    subject: '🎟 [Ticketerra] Xác thực tài khoản của bạn',
+    subject: "🎟 [Ticketerra] Xác thực tài khoản của bạn",
     html: `
       <div style="background-color: #f3f4f6; padding: 40px 20px; font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
@@ -93,13 +92,13 @@ async function sendVerificationEmail(toEmail, token, name = 'bạn') {
 /**
  * Gửi email đặt lại mật khẩu (Quên mật khẩu)
  */
-async function sendPasswordResetEmail(toEmail, token, name = 'bạn') {
+async function sendPasswordResetEmail(toEmail, token, name = "bạn") {
   const resetUrl = `${CLIENT_URL}/reset-password?token=${token}`;
 
   const mailOptions = {
     from: FROM_EMAIL,
     to: toEmail,
-    subject: '[Ticketerra] Yêu cầu đặt lại mật khẩu',
+    subject: "🔒 [Ticketerra] Yêu cầu đặt lại mật khẩu",
     html: `
       <div style="background-color: #f3f4f6; padding: 40px 20px; font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
@@ -159,15 +158,15 @@ async function sendPasswordResetEmail(toEmail, token, name = 'bạn') {
 
 async function sendEventCancellationRefundEmail(toEmail, { buyerName, eventTitle, orderCode, refundAmount, reason }) {
   if (!toEmail) return false;
-  const formattedAmount = Number(refundAmount || 0).toLocaleString('vi-VN') + ' VNĐ';
+  const formattedAmount = Number(refundAmount || 0).toLocaleString("vi-VN") + " VNĐ";
   const mailOptions = {
-    from: `"EventTick" <${process.env.SMTP_USER || 'no-reply@eventtick.local'}>`,
+    from: `"EventTick" <${process.env.SMTP_USER || "no-reply@eventtick.local"}>`,
     to: toEmail,
     subject: `[EventTick] Thông báo hủy sự kiện & hoàn tiền đơn ${orderCode}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px;">
         <h2 style="color: #dc2626; margin-top: 0;">Thông báo hủy sự kiện & hoàn tiền</h2>
-        <p>Xin chào <strong>${buyerName || 'Quý khách'}</strong>,</p>
+        <p>Xin chào <strong>${buyerName || "Quý khách"}</strong>,</p>
         <p>Sự kiện <strong>${eventTitle}</strong> đã bị hủy.</p>
         <ul>
           <li><strong>Mã đơn hàng:</strong> ${orderCode}</li>
@@ -188,9 +187,7 @@ async function sendEventCancellationRefundEmail(toEmail, { buyerName, eventTitle
       return false;
     }
   } else {
-    console.log(
-      `📧 [MÔ PHỎNG EMAIL HOÀN TIỀN SỰ KIỆN] Tới: ${toEmail} | Đơn: ${orderCode} | Số tiền: ${formattedAmount}`,
-    );
+    console.log(`📧 [MÔ PHỎNG EMAIL HOÀN TIỀN SỰ KIỆN] Tới: ${toEmail} | Đơn: ${orderCode} | Số tiền: ${formattedAmount}`);
     return true;
   }
 }
