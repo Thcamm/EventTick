@@ -1,68 +1,23 @@
-const { Event, Zone, Category } = require("../models");
-const { saveUploadedFile } = require("../utils/upload");
+const { Event, EventSession, TicketTier, Category, Review, Ticket } = require('../models');
+const { saveUploadedFile } = require('../utils/upload');
+const { eventToClient } = require('../utils/serializers');
+const { redis } = require('../config/redis');
+const { audit } = require('../utils/audit');
 
-/**
- * Format 1 Event document và gắn kèm các Zone (hạng vé) vào từng Session.
- * Đảm bảo tương thích 100% với cả format mới (Zone) và format cũ của frontend (tickets[]).
- */
-async function populateEventWithZones(eventDoc) {
-  if (!eventDoc) return null;
-  const eventObj = eventDoc.toObject ? eventDoc.toObject() : { ...eventDoc };
+const PUBLIC_STATUS = { $in: ['APPROVED', 'PUBLISHED'] };
 
-  const zones = await Zone.find({ eventId: eventObj._id });
-  const zonesBySession = {};
-  for (const z of zones) {
-    const sId = z.sessionId.toString();
-    if (!zonesBySession[sId]) zonesBySession[sId] = [];
-    zonesBySession[sId].push({
-      _id: z._id,
-      id: z._id,
-      name: z.name,
-      price: z.price,
-      totalCapacity: z.totalCapacity,
-      availableCapacity: z.availableCapacity,
-      stock: z.totalCapacity,
-      remaining: z.availableCapacity,
-      numberOfTicketLeft: z.availableCapacity,
-      soldOut: z.availableCapacity <= 0 ? "true" : "false",
-      desc: z.description,
-      description: z.description,
-      maxPerOrder: z.maxPerOrder,
-    });
-  }
-
-  eventObj.sessions = (eventObj.sessions || []).map((s) => {
-    const sId = s._id.toString();
-    const sessionZones = zonesBySession[sId] || [];
-    return {
-      ...s,
-      zones: sessionZones,
-      tickets: sessionZones, // Tương thích với frontend cũ đọc session.tickets
-    };
-  });
-
-  // Tương thích các trường cũ/mới
-  eventObj.eventName = eventObj.title;
-  eventObj.eventDesc = eventObj.description;
-  eventObj.venueName = eventObj.location;
-  eventObj.eventAddress = eventObj.location;
-  eventObj.backgroundImage = eventObj.bannerUrl;
-  eventObj.eventImage = eventObj.thumbnailUrl || eventObj.bannerUrl;
-
-  return eventObj;
-}
-
-function toClientEventSimple(e) {
-  const obj = e.toObject ? e.toObject() : { ...e };
-  return {
-    ...obj,
-    eventName: obj.title || obj.eventName,
-    eventDesc: obj.description || obj.eventDesc,
-    venueName: obj.location || obj.venueName,
-    eventAddress: obj.location || obj.eventAddress,
-    backgroundImage: obj.bannerUrl || obj.backgroundImage,
-    eventImage: obj.thumbnailUrl || obj.bannerUrl || obj.eventImage,
-  };
+/** Gắn event_sessions + ticket_tiers vào danh sách event (2 query cho cả danh sách). */
+async function withTiers(events) {
+  const ids = events.map((e) => e._id);
+  const [sessions, tiers] = await Promise.all([
+    EventSession.find({ event_id: { $in: ids } }),
+    TicketTier.find({ event_id: { $in: ids } }).sort({ price: 1 }),
+  ]);
+  const sessByEvent = {};
+  const tierByEvent = {};
+  for (const s of sessions) (sessByEvent[s.event_id.toString()] ||= []).push(s);
+  for (const t of tiers) (tierByEvent[t.event_id.toString()] ||= []).push(t);
+  return events.map((e) => eventToClient(e, sessByEvent[e._id.toString()] || [], tierByEvent[e._id.toString()] || []));
 }
 
 // GET /events/:id
@@ -70,309 +25,418 @@ exports.getById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
     if (!event) {
-      return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
+      return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
     }
-    const populated = await populateEventWithZones(event);
+    const [populated] = await withTiers([event]);
     res.json({ success: true, event: populated });
   } catch (err) {
-    res.status(400).json({ success: false, message: "ID sự kiện không hợp lệ" });
+    res.status(400).json({ success: false, message: 'ID sự kiện không hợp lệ' });
   }
 };
 
-// GET /events/in-banner (BannerSection.jsx)
+// GET /events/in-banner
 exports.inBanner = async (req, res) => {
-  const events = await Event.find({ status: { $in: ["APPROVED", "approved"] } })
-    .sort({ createdAt: -1 })
-    .limit(5);
-  res.json({ events: events.map(toClientEventSimple) });
+  let events = await Event.find({ status: PUBLIC_STATUS, is_featured_banner: true }).limit(5);
+  if (events.length === 0) {
+    events = await Event.find({ status: PUBLIC_STATUS }).sort({ created_at: -1 }).limit(5);
+  }
+  res.json({ events: await withTiers(events) });
 };
 
-// GET /events/trending (TrendingEvent.jsx)
+// GET /events/trending
 exports.trending = async (req, res) => {
-  const events = await Event.find({
-    isTrending: true,
-    status: { $in: ["APPROVED", "approved"] },
-  }).limit(10);
-  res.json({ success: true, events: events.map(toClientEventSimple) });
+  const events = await Event.find({ is_trending: true, status: PUBLIC_STATUS }).limit(10);
+  res.json({ success: true, events: await withTiers(events) });
 };
 
-// GET /events/in-special (SpecialEvent.jsx)
+// GET /events/in-special
 exports.special = async (req, res) => {
-  const events = await Event.find({
-    isSpecial: true,
-    status: { $in: ["APPROVED", "approved"] },
-  }).limit(10);
-  res.json({ success: true, events: events.map(toClientEventSimple) });
+  const events = await Event.find({ is_special: true, status: PUBLIC_STATUS }).limit(10);
+  res.json({ success: true, events: await withTiers(events) });
 };
 
-// GET /events/recommend (ForYou.jsx)
+// GET /events/recommend
 exports.recommend = async (req, res) => {
-  const events = await Event.find({ status: { $in: ["APPROVED", "approved"] } })
-    .sort({ createdAt: -1 })
-    .limit(10);
-  res.json({ events: events.map(toClientEventSimple) });
+  const events = await Event.find({ status: PUBLIC_STATUS }).sort({ created_at: -1 }).limit(10);
+  res.json({ events: await withTiers(events) });
 };
 
-// GET /events/latest/week & /events/latest/month (LatestEvent.jsx)
+// GET /events/latest/week & /latest/month
 exports.latest = async (req, res) => {
   const { from, to } = req.query;
-  const filter = { status: { $in: ["APPROVED", "approved"] } };
+  const filter = { status: PUBLIC_STATUS };
   if (from || to) {
-    filter.earliestDate = {};
-    if (from) filter.earliestDate.$gte = new Date(from);
-    if (to) filter.earliestDate.$lte = new Date(to);
+    filter.start_time = {};
+    if (from) filter.start_time.$gte = new Date(from);
+    if (to) filter.start_time.$lte = new Date(to);
   }
-  const events = await Event.find(filter).sort({ earliestDate: 1 }).limit(20);
-  res.json({ success: true, events: events.map(toClientEventSimple) });
+  const events = await Event.find(filter).sort({ start_time: 1 }).limit(20);
+  res.json({ success: true, events: await withTiers(events) });
 };
 
-// GET /events/search?name=&category=&eventType=&priceMin=&priceMax=&sort=&page=&limit= (SearchResultsPage.jsx)
+// GET /events/search?name=&category=&city=&from=&to=&minPrice=&maxPrice=&sort=&page=&limit=
 exports.search = async (req, res) => {
   try {
     const {
       name,
+      keyword,
+      q,
       category,
-      eventType,
-      priceMin,
-      priceMax,
+      categoryId,
+      city,
+      from,
+      to,
+      startDate,
+      endDate,
+      minPrice,
+      maxPrice,
+      hasSeatMap,
       sort,
       page = 1,
-      limit = 12,
+      limit = 20,
     } = req.query;
 
-    const filter = { status: { $in: ["APPROVED", "approved"] } };
+    const filter = { status: PUBLIC_STATUS };
 
-    // 1. Keyword search (Name, Slug, Location)
-    if (name) {
-      filter.$or = [
-        { title: { $regex: name, $options: "i" } },
-        { slug: { $regex: name, $options: "i" } },
-        { location: { $regex: name, $options: "i" } },
-      ];
+    const textQuery = name || keyword || q;
+    if (textQuery) {
+      const rx = { $regex: String(textQuery).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+      filter.$or = [{ title: rx }, { slug: rx }, { city: rx }, { venue_name: rx }, { description: rx }];
     }
 
-    // 2. Exact match filters
-    if (category) filter.category = category;
-    if (eventType) filter.eventType = eventType;
-
-    // 3. Price range filter
-    if (priceMin || priceMax) {
-      filter.lowestPrice = {};
-      if (priceMin) filter.lowestPrice.$gte = Number(priceMin);
-      if (priceMax) filter.lowestPrice.$lte = Number(priceMax);
+    if (city) {
+      filter.city = { $regex: String(city).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
 
-    // 4. Pagination
-    const pageNumber = parseInt(page, 10) || 1;
-    const pageSize = parseInt(limit, 10) || 12;
-    const skip = (pageNumber - 1) * pageSize;
+    const catTarget = categoryId || category;
+    if (catTarget) {
+      const isObjId = catTarget.length === 24 && /^[0-9a-fA-F]{24}$/.test(catTarget);
+      let cat = null;
+      if (isObjId) {
+        cat = await Category.findById(catTarget);
+      }
+      if (!cat) {
+        cat = await Category.findOne({ $or: [{ name: catTarget }, { slug: catTarget }] });
+      }
+      if (!cat) {
+        return res.json({ success: true, events: [], total: 0, page: 1, totalPages: 0, limit: Number(limit) });
+      }
+      filter.category_id = cat._id;
+    }
 
-    // 5. Sorting
-    let sortObj = { createdAt: -1 }; // Mặc định mới nhất
-    if (sort === "price_asc") sortObj = { lowestPrice: 1 };
-    else if (sort === "price_desc") sortObj = { lowestPrice: -1 };
-    else if (sort === "date_asc") sortObj = { earliestDate: 1 };
-    else if (sort === "date_desc") sortObj = { earliestDate: -1 };
+    const fromDate = from || startDate;
+    const toDate = to || endDate;
+    if (fromDate || toDate) {
+      filter.start_time = {};
+      if (fromDate) filter.start_time.$gte = new Date(fromDate);
+      if (toDate) filter.start_time.$lte = new Date(toDate);
+    }
 
-    const totalEvents = await Event.countDocuments(filter);
-    const events = await Event.find(filter)
-      .sort(sortObj)
-      .skip(skip)
-      .limit(pageSize);
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.lowest_price = {};
+      if (minPrice !== undefined && minPrice !== '') filter.lowest_price.$gte = Number(minPrice);
+      if (maxPrice !== undefined && maxPrice !== '') filter.lowest_price.$lte = Number(maxPrice);
+      if (Object.keys(filter.lowest_price).length === 0) delete filter.lowest_price;
+    }
 
+    if (hasSeatMap !== undefined && hasSeatMap !== '') {
+      filter.has_seat_map = hasSeatMap === 'true' || hasSeatMap === true;
+    }
+
+    let sortOption = { created_at: -1 };
+    if (sort === 'price_asc') sortOption = { lowest_price: 1 };
+    else if (sort === 'price_desc') sortOption = { lowest_price: -1 };
+    else if (sort === 'date_asc') sortOption = { start_time: 1 };
+    else if (sort === 'date_desc') sortOption = { start_time: -1 };
+    else if (sort === 'newest') sortOption = { created_at: -1 };
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, events] = await Promise.all([
+      Event.countDocuments(filter),
+      Event.find(filter).sort(sortOption).skip(skip).limit(limitNum),
+    ]);
+
+    const populated = await withTiers(events);
     res.json({
       success: true,
-      events: events.map(toClientEventSimple),
-      pagination: {
-        total: totalEvents,
-        page: pageNumber,
-        limit: pageSize,
-        totalPages: Math.ceil(totalEvents / pageSize),
-      },
+      events: populated,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      limit: limitNum,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /events/my-event (MyEventPage.jsx — bất kỳ user nào đăng nhập đều xem được sự kiện mình tạo)
+// GET /events/my-event
 exports.myEvents = async (req, res) => {
-  const events = await Event.find({ organizerId: req.user.id }).sort({ createdAt: -1 });
+  const events = await Event.find({ organizer_id: req.user.id }).sort({ created_at: -1 });
   res.json({
     success: true,
     events: events.map((e) => ({
       _id: e._id,
       title: e.title,
       eventName: e.title,
-      bannerUrl: e.bannerUrl,
-      backgroundImage: e.bannerUrl,
-      thumbnailUrl: e.thumbnailUrl || e.bannerUrl,
-      eventImage: e.thumbnailUrl || e.bannerUrl,
-      location: e.location,
-      eventAddress: e.location,
-      venueName: e.location,
+      bannerUrl: e.banner_url,
+      backgroundImage: e.banner_url,
+      thumbnailUrl: e.thumbnail_url || e.banner_url,
+      eventImage: e.thumbnail_url || e.banner_url,
+      location: e.venue_name,
+      eventAddress: e.venue_name,
+      venueName: e.venue_name,
       status: e.status,
-      rejectionReason: e.rejectionReason,
-      createdAt: e.createdAt,
+      rejectionReason: e.rejection_reason,
+      createdAt: e.created_at,
     })),
   });
 };
 
-// POST /events (CreateEventPage.jsx — MỌI user đăng ký đều có quyền tạo sự kiện, mặc định PENDING)
-exports.create = async (req, res) => {
+// GET /events/sessions/:sessionId/seats — sơ đồ ghế của 1 suất (UC11)
+// Trạng thái hiển thị = trạng thái Mongo, ghế đang bị khóa trong Redis cũng hiện LOCKED.
+exports.getSessionSeats = async (req, res) => {
   try {
-    const payload = JSON.parse(req.body.data || "{}");
-    const files = Array.isArray(req.files)
-      ? req.files
-      : Object.values(req.files || {}).flat();
-    const backgroundFile = files.find((f) => f.fieldname === "backgroundImage");
-    const eventFile = files.find((f) => f.fieldname === "eventImage");
+    const { Seat } = require('../models');
+    const { getLockedSeatIds } = require('../services/seatLockService');
+    const session = await EventSession.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Không tìm thấy suất diễn' });
 
-    const eventTitle = payload.title || payload.eventName;
-    if (!eventTitle) {
-      return res.status(400).json({ success: false, message: "Thiếu tên sự kiện" });
-    }
-
-    const backgroundUrl = backgroundFile
-      ? await saveUploadedFile(req, backgroundFile)
-      : payload.backgroundImage || payload.bannerUrl || "https://picsum.photos/seed/default/800/450";
-
-    const eventImageUrl = eventFile
-      ? await saveUploadedFile(req, eventFile)
-      : payload.eventImage || payload.thumbnailUrl || backgroundUrl;
-
-    // 1. Tạo các session subdocument
-    const rawSessions = payload.sessions || [];
-    const sessionsToInsert = rawSessions.length > 0
-      ? rawSessions.map((s, idx) => ({
-          name: s.name || `Suất diễn ${idx + 1}`,
-          eventDate: new Date(s.eventDate || Date.now()),
-          startTime: new Date(s.startTime || Date.now()),
-          endTime: s.endTime ? new Date(s.endTime) : undefined,
-        }))
-      : [
-          {
-            name: "Suất diễn chính",
-            eventDate: new Date(),
-            startTime: new Date(),
-          },
-        ];
-
-    // 2. Tạo Event với trạng thái PENDING chờ Admin duyệt
-    const event = new Event({
-      organizerId: req.user.id,
-      title: eventTitle,
-      category: payload.category || "Hội thảo & Workshop",
-      description: payload.description || payload.eventDesc || "",
-      location: payload.location || payload.venueName || payload.eventAddress || "Địa điểm chưa xác định",
-      bannerUrl: backgroundUrl,
-      thumbnailUrl: eventImageUrl,
-      organizerName: payload.organizerName || req.user.username,
-      organizerInfo: payload.organizerInfo || "",
-      eventType: payload.eventType || "offline",
-      sessions: sessionsToInsert,
-      status: "PENDING",
-      allowResale: payload.allowResale || false,
-      allowGift: payload.allowGift || false,
-    });
-
-    await event.save();
-
-    // 3. Tạo Zone cho từng Session
-    const zonesToInsert = [];
-    let lowestPrice = Infinity;
-
-    rawSessions.forEach((s, sIdx) => {
-      const createdSession = event.sessions[sIdx];
-      const sessionTickets = s.tickets || s.zones || [];
-
-      if (sessionTickets.length > 0) {
-        sessionTickets.forEach((t) => {
-          const price = Number(t.price) || 0;
-          const capacity = Number(t.quantity || t.stock || t.totalCapacity) || 50;
-          if (price < lowestPrice) lowestPrice = price;
-
-          zonesToInsert.push({
-            eventId: event._id,
-            sessionId: createdSession._id,
-            name: t.name || "Vé Thường",
-            price,
-            totalCapacity: capacity,
-            availableCapacity: capacity,
-            maxPerOrder: Number(t.maxPerOrder) || 10,
-            description: t.desc || t.description || "",
-          });
-        });
-      } else {
-        // Mặc định 1 zone nếu người dùng không thêm
-        zonesToInsert.push({
-          eventId: event._id,
-          sessionId: createdSession._id,
-          name: "Vé Thường",
-          price: 100000,
-          totalCapacity: 100,
-          availableCapacity: 100,
-        });
-        if (100000 < lowestPrice) lowestPrice = 100000;
-      }
-    });
-
-    if (zonesToInsert.length > 0) {
-      await Zone.insertMany(zonesToInsert);
-    }
-
-    event.lowestPrice = lowestPrice === Infinity ? 0 : lowestPrice;
-    await event.save();
+    const [seats, tiers] = await Promise.all([
+      Seat.find({ session_id: session._id }).sort({ section_name: 1, row_label: 1, seat_number: 1 }),
+      TicketTier.find({ session_id: session._id }),
+    ]);
+    const redisLocked = await getLockedSeatIds(
+      session._id,
+      seats.map((s) => s._id),
+    );
+    const now = new Date();
+    const status = (s) => {
+      if (s.status === 'SOLD') return 'SOLD';
+      if (s.status === 'LOCKED' && s.lock_expires_at > now) return 'LOCKED';
+      return redisLocked.has(s.id) ? 'LOCKED' : 'AVAILABLE';
+    };
 
     res.json({
       success: true,
-      message: "Tạo sự kiện thành công! Sự kiện đang chờ Admin phê duyệt.",
-      eventId: event._id,
+      session: {
+        _id: session._id,
+        name: session.name,
+        startTime: session.start_time,
+        endTime: session.end_time,
+        seatMap: session.seat_map,
+      },
+      tiers: tiers.map((t) => ({
+        _id: t._id,
+        name: t.name,
+        price: t.price,
+        desc: t.description,
+        zoneColor: t.zone_color,
+        zoneType: t.zone_type || 'GA',
+        minPerOrder: t.min_per_order,
+        maxPerOrder: t.max_per_order,
+        numberOfTicketLeft: t.available_quantity,
+      })),
+      seats: seats.map((s) => ({
+        _id: s._id,
+        tierId: s.tier_id,
+        section: s.section_name,
+        row: s.row_label,
+        number: s.seat_number,
+        x: s.coord_x,
+        y: s.coord_y,
+        status: status(s),
+      })),
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: 'ID suất diễn không hợp lệ' });
+  }
+};
+
+const memWaitingRooms = new Map();
+
+// POST /events/:id/waiting-room/join (UC09)
+exports.joinWaitingRoom = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
+
+    const identifier = req.user?.id || req.body?.identifier || req.ip;
+    const qKey = `waiting_room:${event._id}`;
+    const now = Date.now();
+
+    if (redis && redis.status === 'ready') {
+      await redis.zadd(qKey, 'NX', now, String(identifier));
+      const rank = await redis.zrank(qKey, String(identifier));
+      const position = rank !== null ? rank + 1 : 1;
+      const passGranted = position <= 10;
+      let passToken = null;
+      if (passGranted) {
+        passToken = `PASS-${event._id}-${identifier}-${now}`;
+        await redis.setex(`waiting_pass:${event._id}:${identifier}`, 300, passToken);
+      }
+      return res.json({
+        success: true,
+        position,
+        passGranted,
+        passToken,
+        estimatedWaitTimeSeconds: Math.max(0, (position - 10) * 10),
+      });
+    }
+
+    if (!memWaitingRooms.has(String(event._id))) {
+      memWaitingRooms.set(String(event._id), new Set());
+    }
+    memWaitingRooms.get(String(event._id)).add(String(identifier));
+
+    res.json({
+      success: true,
+      position: 1,
+      passGranted: true,
+      passToken: `PASS-${event._id}-${identifier}-${now}`,
+      estimatedWaitTimeSeconds: 0,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// GET /events/admin/pending (Lấy danh sách sự kiện chờ duyệt - Chỉ Admin)
-exports.getPendingEvents = async (req, res) => {
+// GET /events/:id/waiting-room/status (UC09)
+exports.waitingRoomStatus = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") return res.status(403).json({ success: false, message: "Chỉ Admin mới có quyền xem" });
-    const events = await Event.find({ status: "PENDING" }).populate("organizerId", "username email fullName").sort({ createdAt: -1 });
-    res.json({ success: true, events });
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
+
+    const identifier = req.user?.id || req.query.identifier || req.ip;
+    const qKey = `waiting_room:${event._id}`;
+
+    if (redis && redis.status === 'ready') {
+      const rank = await redis.zrank(qKey, String(identifier));
+      if (rank === null) {
+        return res.json({ success: true, inQueue: false, passGranted: true });
+      }
+      const position = rank + 1;
+      const passGranted = position <= 10;
+      let passToken = null;
+      if (passGranted) {
+        passToken = await redis.get(`waiting_pass:${event._id}:${identifier}`);
+        if (!passToken) {
+          passToken = `PASS-${event._id}-${identifier}-${Date.now()}`;
+          await redis.setex(`waiting_pass:${event._id}:${identifier}`, 300, passToken);
+        }
+      }
+      return res.json({
+        success: true,
+        inQueue: true,
+        position,
+        passGranted,
+        passToken,
+        estimatedWaitTimeSeconds: Math.max(0, (position - 10) * 10),
+      });
+    }
+
+    const inMemSet = memWaitingRooms.get(String(event._id));
+    const inQueue = inMemSet ? inMemSet.has(String(identifier)) : true;
+
+    res.json({
+      success: true,
+      inQueue,
+      position: 1,
+      passGranted: true,
+      passToken: `PASS-${event._id}-${identifier}-${Date.now()}`,
+      estimatedWaitTimeSeconds: 0,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// PUT /events/:id/approve (Admin duyệt sự kiện)
-exports.approve = async (req, res) => {
+// GET /events/:id/reviews (UC20)
+exports.listReviews = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") return res.status(403).json({ success: false, message: "Chỉ Admin mới có quyền duyệt sự kiện" });
-    const event = await Event.findByIdAndUpdate(
-      req.params.id,
-      { status: "APPROVED", rejectionReason: null },
-      { new: true },
-    );
-    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
-    res.json({ success: true, message: "Đã phê duyệt sự kiện", event });
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
+
+    const reviews = await Review.find({ event_id: event._id })
+      .populate('user_id', 'full_name username avatar_url')
+      .populate('ticket_id', 'ticket_code')
+      .sort({ created_at: -1 });
+
+    const total = reviews.length;
+    const avg = total > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / total : 0;
+
+    res.json({
+      success: true,
+      totalReviews: total,
+      averageRating: Math.round(avg * 10) / 10,
+      reviews: reviews.map((r) => ({
+        _id: r._id,
+        user: {
+          id: r.user_id?._id,
+          name: r.user_id?.full_name || r.user_id?.username || 'Khách',
+          avatarUrl: r.user_id?.avatar_url,
+        },
+        rating: r.rating,
+        comment: r.comment,
+        organizerReply: r.organizer_reply,
+        createdAt: r.created_at,
+      })),
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// PUT /events/:id/reject (Admin từ chối sự kiện)
-exports.reject = async (req, res) => {
+// POST /events/:id/reviews (UC20)
+exports.createReview = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") return res.status(403).json({ success: false, message: "Chỉ Admin mới có quyền từ chối sự kiện" });
-    const { reason } = req.body;
-    const event = await Event.findByIdAndUpdate(
-      req.params.id,
-      { status: "REJECTED", rejectionReason: reason || "Không đạt tiêu chuẩn kiểm duyệt" },
-      { new: true },
-    );
-    if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
-    res.json({ success: true, message: "Đã từ chối sự kiện", event });
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
+
+    const { ticketId, rating, comment } = req.body;
+    const rNum = Number(rating);
+    if (!Number.isInteger(rNum) || rNum < 1 || rNum > 5) {
+      return res.status(400).json({ success: false, message: 'Số sao đánh giá phải từ 1 đến 5' });
+    }
+
+    let ticket = null;
+    if (ticketId) {
+      ticket = await Ticket.findOne({ _id: ticketId, event_id: event._id, owner_id: req.user.id });
+    } else {
+      ticket = await Ticket.findOne({ event_id: event._id, owner_id: req.user.id });
+    }
+
+    if (!ticket) {
+      return res.status(403).json({ success: false, message: 'Bạn không sở hữu vé hợp lệ cho sự kiện này' });
+    }
+
+    const existed = await Review.findOne({
+      $or: [{ ticket_id: ticket._id }, { event_id: event._id, user_id: req.user.id }],
+    });
+    if (existed) {
+      return res.status(409).json({ success: false, message: 'Bạn đã đánh giá sự kiện này trước đó' });
+    }
+
+    const review = await Review.create({
+      event_id: event._id,
+      user_id: req.user.id,
+      ticket_id: ticket._id,
+      rating: rNum,
+      comment: String(comment || '')
+        .trim()
+        .slice(0, 2000),
+    });
+
+    await audit(req, 'REVIEW_CREATE', 'reviews', review._id, { eventId: event._id, rating: rNum });
+
+    res.status(201).json({
+      success: true,
+      message: 'Cảm ơn bạn đã gửi đánh giá!',
+      reviewId: review._id,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

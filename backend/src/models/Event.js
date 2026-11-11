@@ -1,170 +1,65 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { ref, options } = require("./_helpers");
 
 function slugify(text) {
-  if (!text) return "";
-  return text
+  return (text || "")
     .toString()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
 
-// Subdocument Session (suất diễn)
-const sessionSchema = new Schema(
+const schema = new Schema(
   {
-    name: { type: String, trim: true },
-    eventDate: { type: Date, required: true },
-    startTime: { type: Date, required: true },
-    endTime: { type: Date },
-  },
-  { _id: true },
-);
-
-const eventSchema = new Schema(
-  {
-    organizerId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
-    categoryId: {
-      type: Schema.Types.ObjectId,
-      ref: "Category",
-      index: true,
-    },
-    category: { type: String, default: "Khác" },
-
-    title: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    description: { type: String }, // HTML description
-
-    location: { type: String, required: true, trim: true },
-    bannerUrl: { type: String, required: true },
-    thumbnailUrl: { type: String },
-
-    organizerName: { type: String, trim: true },
-    organizerInfo: { type: String },
-    eventType: { type: String, enum: ["offline", "online"], default: "offline" },
-
-    sessions: {
-      type: [sessionSchema],
-      validate: {
-        validator: function (v) {
-          return Array.isArray(v) && v.length > 0;
-        },
-        message: "Sự kiện phải có ít nhất 1 suất diễn (session)",
-      },
-    },
-
+    organizer_id: ref("User", { required: true }),
+    category_id: ref("Category", { required: true }),
+    title: { type: String, required: true, trim: true, maxlength: 255 },
+    description: { type: String, default: "" },
+    banner_url: { type: String, required: true },
+    venue_name: { type: String, required: true, trim: true, maxlength: 255 },
+    city: { type: String, required: true, trim: true, maxlength: 100 },
+    start_time: { type: Date, required: true },
+    end_time: { type: Date, required: true },
+    has_seat_map: { type: Boolean, default: false }, // false = Vé đứng (GA), true = có sơ đồ ghế
+    allow_resale: { type: Boolean, default: false },
+    max_resale_markup_pct: { type: Number, default: 0, min: 0 },
+    custom_form_schema: { type: Schema.Types.Mixed },
+    legal_doc_url: { type: String },
     status: {
       type: String,
-      enum: [
-        "PENDING",
-        "APPROVED",
-        "REJECTED",
-        "CANCELLED",
-        "COMPLETED",
-        "pending",
-        "approved",
-        "rejected",
-      ],
-      default: "PENDING",
-      index: true,
+      enum: ["DRAFT", "PENDING", "APPROVED", "PUBLISHED", "CANCELLED", "ENDED"],
+      default: "DRAFT",
+      required: true,
     },
-    rejectionReason: { type: String },
+    is_featured_banner: { type: Boolean, default: false },
 
-    isSpecial: { type: Boolean, default: false },
-    isTrending: { type: Boolean, default: false },
-
-    lowestPrice: { type: Number, default: 0 },
-    earliestDate: { type: Date },
-    lastDate: { type: Date },
-
-    // Policy
-    allowResale: { type: Boolean, default: false },
-    allowGift: { type: Boolean, default: false },
+    // --- Trường mở rộng (ngoài đặc tả) ---
+    slug: { type: String, lowercase: true, trim: true },
+    thumbnail_url: { type: String },
+    organizer_name: { type: String },
+    organizer_info: { type: String },
+    event_type: { type: String, enum: ["offline", "online"], default: "offline" },
+    is_trending: { type: Boolean, default: false },
+    is_special: { type: Boolean, default: false },
+    lowest_price: { type: Number, default: 0 },
+    rejection_reason: { type: String },
+    created_at: { type: Date, default: Date.now },
   },
-  {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
-  },
+  options,
 );
 
-// Indexes
-eventSchema.index({ status: 1, createdAt: -1 });
-
-// Virtual aliases for frontend backward compatibility
-eventSchema.virtual("eventName").get(function () {
-  return this.title;
-});
-eventSchema.virtual("eventDesc").get(function () {
-  return this.description;
-});
-eventSchema.virtual("venueName").get(function () {
-  return this.location;
-});
-eventSchema.virtual("eventAddress").get(function () {
-  return this.location;
-});
-eventSchema.virtual("backgroundImage").get(function () {
-  return this.bannerUrl;
-});
-eventSchema.virtual("eventImage").get(function () {
-  return this.thumbnailUrl || this.bannerUrl;
-});
-eventSchema.virtual("ownerId").get(function () {
-  return this.organizerId;
-});
-
-// Pre-validation / Pre-save hooks
-eventSchema.pre("validate", function (next) {
-  // Support legacy field names during assignment
-  if (!this.title && this.get("eventName")) {
-    this.title = this.get("eventName");
-  }
-  if (!this.location && (this.get("venueName") || this.get("eventAddress"))) {
-    this.location = this.get("venueName") || this.get("eventAddress");
-  }
-  if (!this.bannerUrl && this.get("backgroundImage")) {
-    this.bannerUrl = this.get("backgroundImage");
-  }
-  if (!this.thumbnailUrl && this.get("eventImage")) {
-    this.thumbnailUrl = this.get("eventImage");
-  }
-  if (!this.organizerId && this.get("ownerId")) {
-    this.organizerId = this.get("ownerId");
-  }
-  if (!this.description && this.get("eventDesc")) {
-    this.description = this.get("eventDesc");
-  }
-
-  // Auto-generate slug if missing
+schema.pre("validate", function (next) {
   if (!this.slug && this.title) {
-    const baseSlug = slugify(this.title);
-    const suffix = (this._id || Date.now()).toString().slice(-6);
-    this.slug = `${baseSlug}-${suffix}`;
+    this.slug = `${slugify(this.title)}-${this._id.toString().slice(-6)}`;
   }
-
-  // Normalize status
-  if (this.status) {
-    this.status = this.status.toUpperCase();
+  if (this.start_time && this.end_time && this.end_time <= this.start_time) {
+    return next(new Error("end_time phải sau start_time"));
   }
-
-  // Compute earliestDate & lastDate
-  if (this.sessions && this.sessions.length > 0) {
-    const dates = this.sessions.map((s) => new Date(s.eventDate).getTime()).filter(Boolean);
-    if (dates.length) {
-      this.earliestDate = new Date(Math.min(...dates));
-      this.lastDate = new Date(Math.max(...dates));
-    }
-  }
-
   next();
 });
 
-module.exports = mongoose.model("Event", eventSchema);
+module.exports = mongoose.model("Event", schema, "events");

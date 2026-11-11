@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const ctrl = require("../controllers/authController");
 const { requireAuth } = require("../middleware/auth");
+const upload = require("../utils/upload");
 
 // Đăng ký & Kích hoạt email
 router.post("/register", ctrl.register);
@@ -14,7 +15,7 @@ router.get("/", ctrl.me);
 
 // Hồ sơ cá nhân
 router.get("/user", requireAuth, ctrl.getProfile);
-router.post("/user/my-account", requireAuth, ctrl.updateProfile);
+router.post("/user/my-account", requireAuth, upload.single("avatar"), ctrl.updateProfile);
 
 // Quên mật khẩu & Đổi mật khẩu
 router.post("/forgot-password", ctrl.forgotPassword);

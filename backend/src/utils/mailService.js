@@ -156,7 +156,44 @@ async function sendPasswordResetEmail(toEmail, token, name = "bạn") {
   }
 }
 
+async function sendEventCancellationRefundEmail(toEmail, { buyerName, eventTitle, orderCode, refundAmount, reason }) {
+  if (!toEmail) return false;
+  const formattedAmount = Number(refundAmount || 0).toLocaleString("vi-VN") + " VNĐ";
+  const mailOptions = {
+    from: `"EventTick" <${process.env.SMTP_USER || "no-reply@eventtick.local"}>`,
+    to: toEmail,
+    subject: `[EventTick] Thông báo hủy sự kiện & hoàn tiền đơn ${orderCode}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px;">
+        <h2 style="color: #dc2626; margin-top: 0;">Thông báo hủy sự kiện & hoàn tiền</h2>
+        <p>Xin chào <strong>${buyerName || "Quý khách"}</strong>,</p>
+        <p>Sự kiện <strong>${eventTitle}</strong> đã bị hủy.</p>
+        <ul>
+          <li><strong>Mã đơn hàng:</strong> ${orderCode}</li>
+          <li><strong>Số tiền hoàn trả:</strong> ${formattedAmount}</li>
+          <li><strong>Lý do:</strong> ${reason}</li>
+        </ul>
+        <p>Yêu cầu hoàn tiền hàng loạt cho đơn hàng của bạn đã được xử lý trên hệ thống EventTick.</p>
+      </div>
+    `,
+  };
+
+  if (transporter) {
+    try {
+      await transporter.sendMail(mailOptions);
+      return true;
+    } catch (err) {
+      console.error(`❌ Gửi email hoàn tiền thất bại (${toEmail}):`, err.message);
+      return false;
+    }
+  } else {
+    console.log(`📧 [MÔ PHỎNG EMAIL HOÀN TIỀN SỰ KIỆN] Tới: ${toEmail} | Đơn: ${orderCode} | Số tiền: ${formattedAmount}`);
+    return true;
+  }
+}
+
 module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
+  sendEventCancellationRefundEmail,
 };
