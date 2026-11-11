@@ -21,6 +21,7 @@ import {
 import { EVENTS_DB, SEAT_TIERS, OCCUPIED_SET } from '../../data/mockData';
 import { useToast } from '../../context/ToastContext';
 import { PATHS } from '../../routes/paths';
+import EventReviews from '../../components/EventReviews';
 
 export default function EventDetailPage() {
   const { id } = useParams();
@@ -522,6 +523,9 @@ export default function EventDetailPage() {
               </button>
             </aside>
           </div>
+
+          {/* Reviews & Ratings Section (UC34) */}
+          <EventReviews eventId={id || eventId} />
         </div>
       </section>
 
