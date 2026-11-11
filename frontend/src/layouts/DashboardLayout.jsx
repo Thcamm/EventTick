@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Ticket,
@@ -14,6 +15,8 @@ import {
   LogOut,
   ArrowLeft,
   User,
+  Menu,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -24,6 +27,19 @@ export default function DashboardLayout() {
   const { showToast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -45,6 +61,7 @@ export default function DashboardLayout() {
           { label: 'Duyệt sự kiện & Phí', path: PATHS.ADMIN_EVENTS, icon: CalendarDays },
           { label: 'Danh mục CMS', path: PATHS.ADMIN_CATEGORIES, icon: FolderTree },
           { label: 'Quyết toán Payout', path: PATHS.ADMIN_PAYOUTS, icon: DollarSign },
+          { label: 'Chi trả vé Resale', path: PATHS.ADMIN_RESALE_PAYOUTS, icon: Ticket },
         ];
       case 'ORGANIZER':
         return [
@@ -71,14 +88,25 @@ export default function DashboardLayout() {
   const navItems = getNavItems();
 
   return (
-    <div className='min-h-screen flex bg-[#f8f9fa] text-[#09090b]'>
+    <div className='min-h-screen flex bg-[#f9f9fb] text-[#09090b]'>
+      {/* Mobile Drawer Backdrop */}
+      {sidebarOpen && (
+        <div
+          className='fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden'
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar N3 */}
-      <aside className='w-64 bg-[#09090b] text-white flex flex-col justify-between shrink-0 border-r border-[#27272a]'>
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#09090b] text-white flex flex-col justify-between shrink-0 border-r border-[#27272a] transform transition-transform duration-200 ease-in-out md:static md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}>
         <div>
           {/* Logo & Role Badge */}
-          <div className='p-6 border-b border-[#27272a]'>
+          <div className='p-5 sm:p-6 border-b border-[#27272a] flex items-center justify-between'>
             <Link to={PATHS.HOME} className='flex items-center gap-2.5'>
-              <div className='w-8 h-8 rounded-lg bg-white text-black flex items-center justify-center font-bold'>
+              <div className='w-8 h-8 rounded-full bg-white text-black flex items-center justify-center font-bold'>
                 <Ticket size={18} />
               </div>
               <div>
@@ -88,10 +116,16 @@ export default function DashboardLayout() {
                 </div>
               </div>
             </Link>
+            <button
+              type='button'
+              onClick={() => setSidebarOpen(false)}
+              className='md:hidden p-1 text-[#a1a1aa] hover:text-white'>
+              <X size={18} />
+            </button>
           </div>
 
           {/* Navigation Links */}
-          <nav className='p-4 space-y-1.5'>
+          <nav className='p-3 sm:p-4 space-y-1'>
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -99,12 +133,12 @@ export default function DashboardLayout() {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-full text-xs sm:text-sm font-semibold transition-all ${
                     isActive
-                      ? 'bg-white text-black'
+                      ? 'bg-white text-black shadow-xs'
                       : 'text-[#a1a1aa] hover:text-white hover:bg-[#18181b]'
                   }`}>
-                  <Icon size={17} />
+                  <Icon size={16} />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -116,7 +150,7 @@ export default function DashboardLayout() {
         <div className='p-4 border-t border-[#27272a] space-y-2'>
           <Link
             to={PATHS.HOME}
-            className='flex items-center gap-2 px-3 py-2 text-xs text-[#a1a1aa] hover:text-white hover:bg-[#18181b] rounded-lg transition-colors'>
+            className='flex items-center gap-2 px-3.5 py-2 text-xs text-[#a1a1aa] hover:text-white hover:bg-[#18181b] rounded-full transition-colors'>
             <ArrowLeft size={14} />
             <span>Về cổng công cộng</span>
           </Link>
@@ -128,9 +162,9 @@ export default function DashboardLayout() {
             <button
               type='button'
               onClick={handleLogout}
-              className='p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#27272a] rounded-lg transition-colors'
+              className='p-2 text-[#a1a1aa] hover:text-white hover:bg-[#27272a] rounded-full transition-colors'
               title='Đăng xuất'>
-              <LogOut size={16} />
+              <LogOut size={15} />
             </button>
           </div>
         </div>
@@ -139,17 +173,28 @@ export default function DashboardLayout() {
       {/* Main Content Area */}
       <div className='flex-1 flex flex-col min-w-0'>
         {/* Top bar */}
-        <header className='h-16 bg-white border-b border-[#e4e4e7] px-8 flex items-center justify-between'>
-          <div className='text-sm font-semibold text-[#09090b]'>
-            Hệ thống quản trị EventTick • {user?.role}
+        <header className='h-16 bg-white border-b border-[#e4e4e7] px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30'>
+          <div className='flex items-center gap-3'>
+            <button
+              type='button'
+              onClick={() => setSidebarOpen(true)}
+              className='md:hidden p-2 text-[#09090b] hover:bg-[#f4f4f6] rounded-full transition-colors'
+              title='Mở menu'>
+              <Menu size={20} />
+            </button>
+            <div className='text-xs sm:text-sm font-semibold text-[#09090b] truncate'>
+              Hệ thống quản trị • {user?.role}
+            </div>
           </div>
-          <div className='flex items-center gap-3 text-xs text-[#71717a]'>
-            <span>Phiên làm việc: <strong className='text-[#09090b]'>{user?.username}</strong></span>
+          <div className='flex items-center gap-3 text-xs text-[#71717a] shrink-0'>
+            <span className='hidden sm:inline'>
+              Tài khoản: <strong className='text-[#09090b]'>{user?.username}</strong>
+            </span>
           </div>
         </header>
 
         {/* Content body */}
-        <main className='flex-1 p-8 overflow-y-auto'>
+        <main className='flex-1 p-4 sm:p-8 overflow-y-auto'>
           <Outlet />
         </main>
       </div>

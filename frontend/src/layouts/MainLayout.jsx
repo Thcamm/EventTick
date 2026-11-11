@@ -102,29 +102,6 @@ export default function MainLayout() {
 
   return (
     <div className='min-h-screen flex flex-col bg-white text-[#09090b]'>
-      {/* Top Utility Bar */}
-      <div className='top-bar'>
-        <div className='tb-container top-bar-content'>
-          <div className='top-bar-item'>
-            <ShieldCheck size={14} />
-            <span>Vé điện tử chính thức • Hoàn tiền bảo đảm • Hỗ trợ 24/7 qua 1900-6408</span>
-          </div>
-          <div className='top-bar-items'>
-            <Link to={PATHS.ORGANIZER_DASHBOARD} className='top-bar-item'>
-              <PlusCircle size={13} />
-              <span>Dành cho ban tổ chức</span>
-            </Link>
-            <button
-              type='button'
-              className='top-bar-item'
-              onClick={() => showToast('Trung tâm trợ giúp EventTick 24/7 qua 1900-6408')}>
-              <HelpCircle size={13} />
-              <span>Trợ giúp</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* Main Sticky Header */}
       <header className={`site-header ${headerScrolled ? 'scrolled' : ''}`}>
         <div className='tb-container header-inner'>
@@ -248,12 +225,9 @@ export default function MainLayout() {
               <span>TicketStars</span>
               <span className='badge-pill-hot'>HOT</span>
             </Link>
-            <button
-              type='button'
-              className='nav-link'
-              onClick={() => showToast('Cổng mua bán lại vé an toàn TicketStars sắp ra mắt')}>
+            <Link to={PATHS.RESALE} className='nav-link'>
               Bán lại vé
-            </button>
+            </Link>
           </nav>
 
           {/* Auth / Action */}

@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V5 */
 import { ShieldCheck, Users, CalendarDays, DollarSign, TrendingUp, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -28,10 +29,10 @@ export default function AdminDashboardPage() {
             <div key={idx} className='bg-white border border-[#e4e4e7] p-5 rounded-2xl'>
               <div className='flex items-center justify-between text-[#71717a] mb-3'>
                 <span className='text-xs font-semibold uppercase tracking-wider'>{s.label}</span>
-                <Icon size={18} className={s.alert ? 'text-amber-600' : 'text-[#09090b]'} />
+                <Icon size={18} className='text-[#09090b]' />
               </div>
               <div className='text-2xl font-bold text-[#09090b]'>{s.value}</div>
-              <div className={`text-xs mt-2 ${s.alert ? 'text-amber-600 font-semibold' : 'text-[#71717a]'}`}>
+              <div className={`text-xs mt-2 ${s.alert ? 'text-[#09090b] font-semibold' : 'text-[#71717a]'}`}>
                 {s.change}
               </div>
             </div>
@@ -40,7 +41,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Recent Pending Events */}
-      <div className='bg-white border border-[#e4e4e7] rounded-2xl p-6'>
+      <div className='bg-white border border-[#e4e4e7] rounded-3xl p-6'>
         <div className='flex items-center justify-between mb-4'>
           <h2 className='text-base font-bold text-[#09090b] flex items-center gap-2'>
             <AlertCircle size={18} />
@@ -83,12 +84,12 @@ export default function AdminDashboardPage() {
               <div className='flex items-center gap-2'>
                 <button
                   type='button'
-                  className='px-3 py-1.5 bg-[#09090b] text-white text-xs font-semibold rounded-lg hover:bg-[#27272a] transition-colors'>
+                  className='px-4 py-1.5 bg-[#09090b] text-white text-xs font-semibold rounded-full hover:bg-[#27272a] transition-colors'>
                   Phê duyệt
                 </button>
                 <button
                   type='button'
-                  className='px-3 py-1.5 border border-[#e4e4e7] text-xs font-semibold rounded-lg hover:bg-[#f4f4f6] text-[#52525b] transition-colors'>
+                  className='px-4 py-1.5 border border-[#e4e4e7] text-xs font-semibold rounded-full hover:bg-[#f4f4f6] text-[#52525b] transition-colors'>
                   Xem chi tiết
                 </button>
               </div>
