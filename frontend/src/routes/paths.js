@@ -3,6 +3,7 @@ export const PATHS = {
   EVENT_DETAIL: '/events/:id',
   SEARCH: '/search',
   RESALE: '/resale',
+  RESALE_EVENT: '/resale/:eventId',
 
   // Auth
   LOGIN: '/login',
@@ -23,6 +24,7 @@ export const PATHS = {
   ORGANIZER_KYC: '/organizer/kyc',
   ORGANIZER_CONTRACTS: '/organizer/contracts',
   ORGANIZER_PAYOUTS: '/organizer/payouts',
+  ORGANIZER_EVENT_VOUCHERS: '/organizer/events/:eventId/vouchers',
 
   // Staff
   STAFF_CHECKIN: '/staff/check-in',
@@ -35,6 +37,7 @@ export const PATHS = {
   ADMIN_EVENTS: '/admin/events',
   ADMIN_CATEGORIES: '/admin/categories',
   ADMIN_PAYOUTS: '/admin/payouts',
+  ADMIN_RESALE_PAYOUTS: '/admin/resale-payouts',
 };
 
 export function getRoleHomePath(role) {

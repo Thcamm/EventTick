@@ -56,13 +56,13 @@ export default function LoginPage() {
         )}
 
         {unverifiedEmail && (
-          <div className='mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg flex flex-col gap-2'>
+          <div className='mb-4 p-3.5 bg-[#f9f9fb] border border-[#e4e4e7] text-[#09090b] text-xs rounded-xl flex flex-col gap-2'>
             <span>Tài khoản {unverifiedEmail} chưa kích hoạt email.</span>
             <button
               type='button'
               onClick={handleResendVerification}
               disabled={resending}
-              className='text-xs font-semibold text-left underline disabled:opacity-60 hover:text-amber-900'>
+              className='text-xs font-semibold text-left underline disabled:opacity-60 hover:text-black'>
               {resending ? 'Đang gửi...' : 'Gửi lại link kích hoạt email'}
             </button>
           </div>
@@ -106,7 +106,7 @@ export default function LoginPage() {
           <button
             type='submit'
             disabled={loading}
-            className='w-full py-2.5 mt-2 bg-[#09090b] text-white font-medium text-sm rounded-lg hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
+            className='w-full py-2.5 mt-2 bg-[#09090b] text-white font-semibold text-sm rounded-full hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
             {loading ? 'Đang xử lý...' : 'Đăng nhập'}
           </button>
         </form>

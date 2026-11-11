@@ -43,14 +43,14 @@ export default function VerifyEmailPage() {
 
         {status === 'success' && (
           <div className='flex flex-col items-center justify-center'>
-            <div className='w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center mb-4'>
+            <div className='w-12 h-12 bg-[#09090b] text-white rounded-full flex items-center justify-center mb-4 shadow-xs'>
               <CheckCircle2 className='w-7 h-7' />
             </div>
             <h2 className='text-xl font-bold text-[#09090b] mb-2'>Kích hoạt thành công</h2>
             <p className='text-sm text-[#71717a] mb-6'>{message}</p>
             <Link
               to={PATHS.LOGIN}
-              className='w-full py-2.5 bg-[#09090b] text-white text-sm font-medium rounded-lg hover:bg-[#27272a] transition-colors'>
+              className='w-full py-2.5 bg-[#09090b] text-white text-sm font-semibold rounded-full hover:bg-[#27272a] transition-colors'>
               Đăng nhập ngay
             </Link>
           </div>
@@ -58,14 +58,14 @@ export default function VerifyEmailPage() {
 
         {status === 'error' && (
           <div className='flex flex-col items-center justify-center'>
-            <div className='w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-4'>
+            <div className='w-12 h-12 bg-[#f4f4f6] text-[#09090b] border border-[#e4e4e7] rounded-full flex items-center justify-center mb-4'>
               <XCircle className='w-7 h-7' />
             </div>
             <h2 className='text-xl font-bold text-[#09090b] mb-2'>Xác thực thất bại</h2>
             <p className='text-sm text-[#71717a] mb-6'>{message}</p>
             <Link
               to={PATHS.LOGIN}
-              className='w-full py-2.5 border border-[#e4e4e7] text-[#09090b] text-sm font-medium rounded-lg hover:bg-[#f4f4f6] transition-colors'>
+              className='w-full py-2.5 border border-[#e4e4e7] text-[#09090b] text-sm font-semibold rounded-full hover:bg-[#f4f4f6] transition-colors'>
               Quay lại đăng nhập
             </Link>
           </div>

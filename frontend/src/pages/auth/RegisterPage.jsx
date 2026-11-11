@@ -60,7 +60,7 @@ export default function RegisterPage() {
           </p>
           <Link
             to={PATHS.LOGIN}
-            className='inline-block w-full py-2.5 bg-[#09090b] text-white text-sm font-medium rounded-lg hover:bg-[#27272a] transition-colors'>
+            className='inline-block w-full py-2.5 bg-[#09090b] text-white text-sm font-semibold rounded-full hover:bg-[#27272a] transition-colors'>
             Đến trang đăng nhập
           </Link>
         </div>
@@ -89,7 +89,7 @@ export default function RegisterPage() {
               <button
                 type='button'
                 onClick={() => setForm({ ...form, role: 'CUSTOMER' })}
-                className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-all ${
+                className={`py-2 px-3 text-xs font-semibold rounded-full border transition-all ${
                   form.role === 'CUSTOMER'
                     ? 'border-[#09090b] bg-[#09090b] text-white'
                     : 'border-[#e4e4e7] bg-white text-[#52525b] hover:bg-[#f4f4f6]'
@@ -99,7 +99,7 @@ export default function RegisterPage() {
               <button
                 type='button'
                 onClick={() => setForm({ ...form, role: 'ORGANIZER' })}
-                className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-all ${
+                className={`py-2 px-3 text-xs font-semibold rounded-full border transition-all ${
                   form.role === 'ORGANIZER'
                     ? 'border-[#09090b] bg-[#09090b] text-white'
                     : 'border-[#e4e4e7] bg-white text-[#52525b] hover:bg-[#f4f4f6]'
@@ -166,7 +166,7 @@ export default function RegisterPage() {
           <button
             type='submit'
             disabled={loading}
-            className='w-full py-2.5 mt-2 bg-[#09090b] text-white font-medium text-sm rounded-lg hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
+            className='w-full py-2.5 mt-2 bg-[#09090b] text-white font-semibold text-sm rounded-full hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
             {loading ? 'Đang tạo tài khoản...' : 'Đăng ký'}
           </button>
         </form>

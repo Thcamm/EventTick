@@ -24,7 +24,7 @@ export default function ResetPasswordPage() {
           </p>
           <Link
             to={PATHS.FORGOT_PASSWORD}
-            className='inline-block w-full py-2.5 bg-[#09090b] text-white text-sm font-medium rounded-lg hover:bg-[#27272a] transition-colors'>
+            className='inline-block w-full py-2.5 bg-[#09090b] text-white text-sm font-semibold rounded-full hover:bg-[#27272a] transition-colors'>
             Gửi lại yêu cầu
           </Link>
         </div>
@@ -104,7 +104,7 @@ export default function ResetPasswordPage() {
           <button
             type='submit'
             disabled={loading}
-            className='w-full py-2.5 mt-2 bg-[#09090b] text-white font-medium text-sm rounded-lg hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
+            className='w-full py-2.5 mt-2 bg-[#09090b] text-white font-semibold text-sm rounded-full hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
             {loading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
           </button>
         </form>

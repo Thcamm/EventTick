@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V5 */
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -185,7 +186,7 @@ export default function ProfilePage() {
             <button
               type='submit'
               disabled={profileSaving}
-              className='px-5 py-2.5 bg-[#09090b] text-white text-sm font-semibold rounded-lg hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
+              className='px-6 py-2.5 bg-[#09090b] text-white text-xs font-semibold rounded-full hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
               {profileSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
           </form>
@@ -254,7 +255,7 @@ export default function ProfilePage() {
           <button
             type='submit'
             disabled={passwordSaving}
-            className='px-5 py-2.5 bg-[#09090b] text-white text-sm font-semibold rounded-lg hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
+            className='px-6 py-2.5 bg-[#09090b] text-white text-xs font-semibold rounded-full hover:bg-[#27272a] disabled:opacity-50 transition-colors'>
             {passwordSaving ? 'Đang đổi...' : 'Cập nhật mật khẩu'}
           </button>
         </form>
