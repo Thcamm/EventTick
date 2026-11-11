@@ -66,7 +66,7 @@ app.use("/v1/user", userRoutes);
 app.get("/v1/seats/:id", eventCtrl.getById);
 
 // Thêm API mới theo yêu cầu
-app.use("/v1/users", userRoutes);
+app.use("/api/users", userRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Không tìm thấy endpoint này" });
