@@ -489,7 +489,7 @@ exports.getOverviewAnalytics = ah(async (req, res) => {
     Event.countDocuments(),
     Event.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
     Order.find({ status: "PAID" }),
-    OrganizerProfile.countDocuments({ status: "PENDING" }),
+    OrganizerProfile.countDocuments({ kyc_status: "PENDING" }),
     PayoutSettlement.countDocuments({ status: "REQUESTED" }),
     RefundRequest.countDocuments({ status: "PROCESSING" }),
   ]);

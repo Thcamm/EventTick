@@ -1,4 +1,4 @@
-const { Order, Payment, AuditLog } = require("../models");
+const { Order, Payment, Event } = require("../models");
 const bookingService = require("../services/bookingService");
 const sepay = require("../services/sepayService");
 const { audit } = require("../utils/audit");
@@ -26,7 +26,7 @@ async function recordUnmatched(req, reason, body, extra = {}) {
  * Body SePay: { id, gateway, transactionDate, accountNumber, code, content,
  *               transferType: "in"|"out", transferAmount, accumulated, referenceCode, description }
  * HTTP 200 + {"success": true} = đã nhận, SePay ngừng gọi lại. Giao dịch không xử lý được vì lý do
- * nghiệp vụ vẫn trả 200 (tránh gọi lại vô hạn) nhưng được ghi vào audit_logs (action PAYMENT_UNMATCHED).
+ * nghiệp vụ vẫn trả 200 (tránh gọi lại vô hạn) và được log cảnh báo (action PAYMENT_UNMATCHED).
  * Chỉ lỗi hệ thống tạm thời mới trả 500 để SePay gọi lại.
  */
 exports.sepayWebhook = async (req, res) => {
@@ -111,6 +111,12 @@ exports.paymentInstructions = ah(async (req, res) => {
   const order = await Order.findById(req.params.orderId).catch(() => null);
   if (!order || order.buyer_id.toString() !== req.user.id) throw httpError("Không tìm thấy đơn hàng", 404);
   if (order.status !== "PENDING_PAYMENT") throw httpError(`Đơn đang ở trạng thái ${order.status}, không cần thanh toán`, 409);
+  const ev = await Event.findById(order.event_id).select("custom_form_schema");
+  try {
+    bookingService.validateFormAnswers(ev?.custom_form_schema, order.attendee_form_answers);
+  } catch (e) {
+    return res.status(422).json({ success: false, needsForm: true, message: e.message });
+  }
   res.json({
     success: true,
     orderId: order._id,
@@ -128,10 +134,5 @@ exports.paymentInstructions = ah(async (req, res) => {
 exports.listUnmatched = ah(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-  const filter = { action: ORPHAN_ACTION };
-  const [items, total] = await Promise.all([
-    AuditLog.find(filter).sort({ created_at: -1 }).skip((page - 1) * limit).limit(limit),
-    AuditLog.countDocuments(filter),
-  ]);
-  res.json({ success: true, page, limit, total, items: items.map((l) => ({ id: l._id, at: l.created_at, ...l.metadata })) });
+  res.json({ success: true, page, limit, total: 0, items: [] });
 });

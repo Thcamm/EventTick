@@ -1,18 +1,20 @@
 # 🗄️ EventTick — Đặc Tả Cơ Sở Dữ Liệu Vật Lý (Database Specification)
 
-Tài liệu này định nghĩa chi tiết cấu trúc **20 Bảng / Collections** cho hệ thống **EventTick (MERN Stack)**, đồng bộ 100% với thiết kế Physical ERD chuẩn của dự án, đồng thời giải quyết triệt để nghiệp vụ **Vé đứng (General Admission)** trong bảng `orders` và thiết lập mối quan hệ **1-1** giữa **`orders` và `payments`**.
+Tài liệu này định nghĩa chi tiết cấu trúc **17 Bảng / Collections** cho hệ thống **EventTick (MERN Stack)**, đồng bộ 100% với thiết kế Physical ERD chuẩn của dự án, đồng thời giải quyết triệt để nghiệp vụ **Vé đứng (General Admission)** trong bảng `orders` và thiết lập mối quan hệ **1-1** giữa **`orders` và `payments`**.
 
 > **🔄 Cập nhật cấu trúc suất diễn:** Thêm bảng **`event_sessions`** (suất diễn). Quan hệ mới: `events (1) → (N) event_sessions (1) → (N) ticket_tiers & seats`. Các bảng `ticket_tiers`, `seats`, `orders`, `tickets` có thêm cột **`session_id`** để biết thuộc suất diễn nào. Mỗi suất có hạng vé, ghế và tồn kho riêng.
 
-> **🗺️ Cập nhật sơ đồ chỗ ngồi:** Thêm bảng **`seatmap_layouts`** (mỗi sự kiện 1 bản ghi: nội dung SVG mặt bằng + cấu hình từng khu). Organizer gửi `zone_map.svg` + `seating_manifest.xlsx`, **Admin** tải lên để hệ thống dựng sơ đồ: khu `SEC_…` trong SVG ↔ `seatmap_layouts.sections[].section_id` ↔ `seats.section_name`. Các cột cũ `ticket_tiers.zone_shape` và `event_sessions.seat_map` (vẽ tay) **không còn dùng**.
+> **🗺️ Cập nhật sơ đồ chỗ ngồi:** Thêm bảng **`seatmap_layouts`** (mỗi sự kiện 1 bản ghi: nội dung SVG mặt bằng + cấu hình từng khu). Organizer gửi `zone_map.svg` + `seating_manifest.xlsx`, **Admin** tải lên để hệ thống dựng sơ đồ: khu `SEC_…` trong SVG ↔ `seatmap_layouts.sections[].section_id` ↔ `seats.section_name`. Trường `ticket_tiers.zone_type` (`"GA"` / `"SEATED"`) phân định khu vực vé đứng và vé ngồi. Các trường cũ như `ticket_tiers.zone_shape` và `event_sessions.seat_map` (vẽ tay) **đã được loại bỏ**.
 
 ---
 
-## 📊 1. Sơ Đồ Physical ERD Chuẩn Hóa (20 Bảng)
+## 📊 1. Sơ Đồ Physical ERD Chuẩn Hóa (17 Bảng)
 
 Dưới đây là mã Mermaid ERD đã được cập nhật:
 * Chuyển quan hệ `orders` — `payments` thành **1-1 (`||--o|`)** với `order_id FK,UK`.
 * Bổ sung cột `items_snapshot` (`json`) vào bảng `orders` để lưu chi tiết hạng vé và số lượng khi khách mua **Vé đứng** (vì vé đứng chưa có `tickets` lúc đang chờ thanh toán và cũng không có bản ghi trong bảng `seats`).
+* Bổ sung `zone_type` (`GA`, `SEATED`) vào `ticket_tiers`.
+* Đã loại bỏ các bảng không còn sử dụng: `reviews`, `wishlists_follows`, `audit_logs`.
 
 ```mermaid
 %%{init: {
@@ -51,12 +53,8 @@ erDiagram
     orders ||--o{ refund_requests : "requests_refund"
     events ||--o| payout_settlements : "settled_via"
     e_contracts ||--o| payout_settlements : "calculates_fee"
-    events ||--o{ reviews : "rated_in"
-    tickets ||--o| reviews : "verifies_attendance"
-    users ||--o{ wishlists_follows : "saves_follows"
-    users ||--o{ audit_logs : "triggers"
 
-    %% ================= CHI TIẾT 20 BẢNG =================
+    %% ================= CHI TIẾT 17 BẢNG =================
     users {
         uuid user_id PK
         varchar email UK "Not Null"
@@ -151,6 +149,7 @@ erDiagram
         timestamp sale_start_time "Not Null"
         timestamp sale_end_time "Not Null"
         varchar zone_color
+        enum zone_type "GA, SEATED"
     }
     seats {
         uuid seat_id PK
@@ -277,38 +276,11 @@ erDiagram
         uuid settled_by_admin FK
         timestamp settled_at
     }
-    reviews {
-        uuid review_id PK
-        uuid event_id FK "Not Null"
-        uuid user_id FK "Not Null"
-        uuid ticket_id FK,UK "Not Null"
-        int rating "1 to 5"
-        text comment
-        text organizer_reply
-        timestamp created_at
-    }
-    wishlists_follows {
-        uuid id PK
-        uuid user_id FK "Not Null"
-        uuid target_event_id FK "Nullable"
-        uuid target_organizer_id FK "Nullable"
-        enum type "WISHLIST_EVENT, FOLLOW_ORGANIZER"
-    }
-    audit_logs {
-        uuid log_id PK
-        uuid actor_id FK
-        varchar action "Not Null"
-        varchar target_entity "Not Null"
-        varchar target_id "Not Null"
-        json metadata
-        varchar ip_address
-        timestamp created_at
-    }
 ```
 
 ---
 
-## 📌 2. Tổng Quan Danh Sách 20 Bảng / Collections
+## 📌 2. Tổng Quan Danh Sách 17 Bảng / Collections
 
 | STT | Tên Bảng / Collection | Phân hệ (Module) | Mô tả chức năng chính |
 | :--- | :--- | :--- | :--- |
@@ -317,21 +289,18 @@ erDiagram
 | 03 | `staff_assignments` | Identity & KYC | Phân công nhân viên soát vé (`STAFF`) theo từng sự kiện và cổng |
 | 04 | `categories` | Event & Inventory | Danh mục phân loại sự kiện |
 | 05 | `events` | Event & Inventory | Thông tin chi tiết sự kiện, cờ bật/tắt sơ đồ ghế (`has_seat_map`) |
-| 06 | `event_sessions` | Event & Inventory | **(Mới)** Suất diễn của sự kiện (`1-N` với `events`); mỗi suất có hạng vé, ghế và tồn kho riêng |
+| 06 | `event_sessions` | Event & Inventory | Suất diễn của sự kiện (`1-N` với `events`); mỗi suất có hạng vé, ghế và tồn kho riêng |
 | 07 | `e_contracts` | Contract & Finance | Hợp đồng dịch vụ điện tử giữa Sàn và Organizer (Quan hệ `1-1` với `events`) |
-| 08 | `ticket_tiers` | Event & Inventory | Hạng vé, giá vé và tồn kho (`available_quantity`) theo từng **suất diễn** |
+| 08 | `ticket_tiers` | Event & Inventory | Hạng vé, giá vé, phân loại khu vực (`zone_type`: `GA` / `SEATED`) và tồn kho (`available_quantity`) theo từng **suất diễn** |
 | 09 | `seats` | Event & Inventory | Vị trí ghế ngồi vật lý theo từng **suất diễn** (Chỉ dùng khi `events.has_seat_map = true`) |
-| 10 | `vouchers` | Booking & Payment | Mã giảm giá và điều kiện áp dụng theo sự kiện |
-| 11 | `orders` | Booking & Payment | Đơn đặt vé cho **1 suất diễn**, dùng `items_snapshot` xử lý cả **Vé đứng** và **Vé ngồi** |
-| 12 | `payments` | Booking & Payment | Giao dịch thanh toán trực tuyến (Quan hệ **`1-1`** với `orders`) |
-| 13 | `tickets` | Ticket & Check-in | Vé điện tử phát hành sau khi `orders` thanh toán thành công (`seat_id` Nullable) |
-| 14 | `resale_listings` | Ticket & Check-in | Bài đăng bán lại vé trên chợ chuyển nhượng chính thức |
-| 15 | `refund_requests` | Contract & Finance | Bản ghi hoàn tiền khi sự kiện bị huỷ (hoàn hàng loạt) |
-| 16 | `payout_settlements` | Contract & Finance | Đối soát doanh thu và giải ngân cho Nhà tổ chức (`1-1` với `events`) |
-| 17 | `reviews` | Ticket & Check-in | Đánh giá sự kiện gắn với chiếc vé đã tham dự (`1-1` với `tickets`) |
-| 18 | `wishlists_follows` | Event & Inventory | Lưu sự kiện yêu thích và theo dõi Nhà tổ chức của người dùng |
-| 19 | `audit_logs` | System Audit | Nhật ký kiểm toán hành động của hệ thống *(Bảng log kỹ thuật)* |
-| 20 | `seatmap_layouts` | Event & Inventory | **(Mới)** Sơ đồ chỗ ngồi của sự kiện: SVG mặt bằng + cấu hình khu, do Admin dựng từ file của Organizer (`1-1` với `events`) |
+| 10 | `seatmap_layouts` | Event & Inventory | Sơ đồ chỗ ngồi của sự kiện: SVG mặt bằng + cấu hình khu, do Admin dựng từ file của Organizer (`1-1` với `events`) |
+| 11 | `vouchers` | Booking & Payment | Mã giảm giá và điều kiện áp dụng theo sự kiện |
+| 12 | `orders` | Booking & Payment | Đơn đặt vé cho **1 suất diễn**, dùng `items_snapshot` xử lý cả **Vé đứng** và **Vé ngồi** |
+| 13 | `payments` | Booking & Payment | Giao dịch thanh toán trực tuyến (Quan hệ **`1-1`** với `orders`) |
+| 14 | `tickets` | Ticket & Check-in | Vé điện tử phát hành sau khi `orders` thanh toán thành công (`seat_id` Nullable) |
+| 15 | `resale_listings` | Ticket & Check-in | Bài đăng bán lại vé trên chợ chuyển nhượng chính thức |
+| 16 | `refund_requests` | Contract & Finance | Bản ghi hoàn tiền khi sự kiện bị huỷ (hoàn hàng loạt) |
+| 17 | `payout_settlements` | Contract & Finance | Đối soát doanh thu và giải ngân cho Nhà tổ chức (`1-1` với `events`) |
 
 ---
 
@@ -417,7 +386,7 @@ Thông tin sự kiện và cấu hình chính sách (UC22, UC23, UC26, UC39).
 | `status` | `ENUM` | `Not Null` | `'DRAFT'`, `'PENDING'`, `'APPROVED'`, `'PUBLISHED'`, `'CANCELLED'`, `'ENDED'` |
 | `is_featured_banner` | `BOOLEAN` | `Default false` | Đưa lên banner nổi bật trang chủ |
 
-### 3.5A. Bảng `event_sessions` (⭐ MỚI — Suất diễn)
+### 3.6. Bảng `event_sessions` (Suất diễn)
 Một sự kiện có thể diễn ra nhiều lần (nhiều ngày / nhiều khung giờ). Mỗi **suất diễn** quản lý **hạng vé, sơ đồ ghế và tồn kho riêng**. Cấu trúc liên kết: `events (1) → (N) event_sessions (1) → (N) ticket_tiers & seats`. Sự kiện chỉ diễn ra một lần vẫn có đúng 1 bản ghi `event_sessions`.
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -431,7 +400,7 @@ Một sự kiện có thể diễn ra nhiều lần (nhiều ngày / nhiều khu
 
 **Index:** `(event_id, start_time)`, `(start_time)`.
 
-### 3.6. Bảng `e_contracts`
+### 3.7. Bảng `e_contracts`
 Hợp đồng điện tử giữa Sàn và Nhà tổ chức, quan hệ **1-1** với `events` (UC27, UC38, UC41).
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -448,8 +417,8 @@ Hợp đồng điện tử giữa Sàn và Nhà tổ chức, quan hệ **1-1** v
 | `signed_at` | `TIMESTAMP` | `Nullable` | Thời điểm hoàn tất ký số |
 | `status` | `ENUM` | `Not Null` | `'WAITING_SIGN'`, `'SIGNED'`, `'REJECTED'` |
 
-### 3.7. Bảng `ticket_tiers`
-Quản lý các hạng vé và tồn kho (Phục vụ trực tiếp việc trừ số lượng tồn kho `available_quantity` cho **Vé đứng** lẫn **Vé ngồi**) (UC10, UC25).
+### 3.8. Bảng `ticket_tiers`
+Quản lý các hạng vé và tồn kho (Phục vụ trực tiếp việc trừ số lượng tồn kho `available_quantity` cho **Vé đứng** lẫn **Vé ngồi**) (UC10, UC25). Cột `zone_shape` cũ đã được loại bỏ hoàn toàn khỏi schema.
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
 | :--- | :--- | :--- | :--- |
@@ -465,9 +434,9 @@ Quản lý các hạng vé và tồn kho (Phục vụ trực tiếp việc trừ
 | `sale_start_time` | `TIMESTAMP` | `Not Null` | Thời gian mở bán |
 | `sale_end_time` | `TIMESTAMP` | `Not Null` | Thời gian đóng bán |
 | `zone_color` | `VARCHAR(20)` | `Nullable` | Mã màu hiển thị khu vực vé |
-| `zone_type` | `ENUM` | `Default 'GA'` | `'GA'` bán theo số lượng \| `'SEATED'` bán theo ghế đánh số (do import sơ đồ đặt) |
+| `zone_type` | `ENUM` | `Not Null, Default 'GA'` | Phân loại khu vực vé: `'GA'` (Vé đứng bán theo số lượng) \| `'SEATED'` (Vé ngồi theo sơ đồ ghế) |
 
-### 3.8. Bảng `seats`
+### 3.9. Bảng `seats`
 Lưu từng vị trí ghế ngồi trên sơ đồ (Chỉ sinh dữ liệu khi `events.has_seat_map = true`) (UC11, UC24). Ghế được **sinh tự động khi Admin import sơ đồ** (mỗi suất diễn một bản); ghế khóa (`Blocked_Seats`) không được sinh.
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -485,7 +454,7 @@ Lưu từng vị trí ghế ngồi trên sơ đồ (Chỉ sinh dữ liệu khi `
 | `locked_by_user_id` | `UUID / ObjectId` | `FK, Nullable` | Người dùng đang giữ ghế tạm thời 10 phút |
 | `lock_expires_at` | `TIMESTAMP` | `Nullable` | Thời điểm hết hạn giữ ghế |
 
-### 3.8b. Bảng `seatmap_layouts`
+### 3.10. Bảng `seatmap_layouts`
 Sơ đồ chỗ ngồi của sự kiện, do **Admin** dựng từ 2 file Organizer gửi (UC24). Quan hệ `1-1` với `events`.
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -498,7 +467,7 @@ Sơ đồ chỗ ngồi của sự kiện, do **Admin** dựng từ 2 file Organi
 | `updated_by` | `UUID / ObjectId` | `FK, Nullable` | Admin thực hiện import |
 | `updated_at` | `TIMESTAMP` | — | Lần import gần nhất |
 
-### 3.9. Bảng `vouchers`
+### 3.11. Bảng `vouchers`
 Mã giảm giá của sự kiện (UC14, UC28).
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -519,7 +488,7 @@ Mã giảm giá của sự kiện (UC14, UC28).
 
 ---
 
-### 3.10. Bảng `orders` (⭐ GIẢI PHÁP XỬ LÝ VÉ ĐỨNG & VÉ NGỒI)
+### 3.12. Bảng `orders` (⭐ GIẢI PHÁP XỬ LÝ VÉ ĐỨNG & VÉ NGỒI)
 
 #### 💡 Tại sao phải có trường `items_snapshot` (JSON) trong bảng `orders` để xử lý Vé đứng?
 * Khi khách hàng đang ở bước **Giữ chỗ 10 phút (`status = 'PENDING_PAYMENT'`)**, vé điện tử (`tickets`) **chưa được sinh ra** (chỉ sinh `tickets` sau khi thanh toán thành công).
@@ -575,7 +544,7 @@ Mã giảm giá của sự kiện (UC14, UC28).
 
 ---
 
-### 3.11. Bảng `payments` (⭐ QUAN HỆ 1-1 VỚI BẢNG `orders`)
+### 3.13. Bảng `payments` (⭐ QUAN HỆ 1-1 VỚI BẢNG `orders`)
 Mỗi đơn hàng (`orders`) gắn chặt với **đúng 1 bản ghi thanh toán (`payments`)** duy nhất thông qua ràng buộc `Unique (UK)` trên trường `order_id`.
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -591,7 +560,7 @@ Mỗi đơn hàng (`orders`) gắn chặt với **đúng 1 bản ghi thanh toán
 
 ---
 
-### 3.12. Bảng `tickets`
+### 3.14. Bảng `tickets`
 Vé điện tử độc lập được sinh ra sau khi `orders` chuyển sang `PAID` (UC17, UC35).
 * Với **Vé đứng**: `seat_id` mang giá trị `NULL`.
 * Với **Vé ngồi**: `seat_id` tham chiếu `1-1` tới ghế trong bảng `seats`.
@@ -611,7 +580,7 @@ Vé điện tử độc lập được sinh ra sau khi `orders` chuyển sang `P
 | `checked_in_at` | `TIMESTAMP` | `Nullable` | Thời điểm quét mã QR qua cổng |
 | `checked_in_by` | `UUID / ObjectId` | `FK, Nullable` | Nhân viên `STAFF` thực hiện quét vé (`users.user_id`) |
 
-### 3.13. Bảng `resale_listings`
+### 3.15. Bảng `resale_listings`
 Quản lý vé đăng bán lại trên chợ chính thức (Quan hệ `1-1` với `tickets`) (UC19).
 
 Luồng: người bán đăng tin (`ACTIVE`, khai báo tài khoản nhận tiền) → người mua chọn vé, trả lời form, tạo đơn `orders.order_type = 'RESALE'` (tin chuyển `RESERVED` trong 10 phút, **không áp dụng voucher**) → người mua chuyển khoản cho EventTick qua SePay → webhook: vé cũ `RESOLD_INVALID`, cấp vé mới cho người mua, tin `SOLD`, `payout_status = 'PENDING'` → Admin chuyển tiền cho người bán và ghi `payout_status = 'PAID'`. Đơn hết hạn hoặc bị huỷ thì tin trở lại `ACTIVE`.
@@ -636,7 +605,7 @@ Luồng: người bán đăng tin (`ACTIVE`, khai báo tài khoản nhận tiề
 | `paid_out_by` | `UUID / ObjectId` | `FK, Nullable` | Admin thực hiện chi trả |
 | `created_at` | `TIMESTAMP` | `Not Null` | Thời gian đăng bán |
 
-### 3.14. Bảng `refund_requests`
+### 3.16. Bảng `refund_requests`
 Bản ghi hoàn tiền **chỉ khi sự kiện bị huỷ** (UC23, UC43). Hệ thống **không hỗ trợ khách tự hoàn vé lẻ**; khách muốn đổi ý thì đăng bán lại vé (UC19).
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -651,7 +620,7 @@ Bản ghi hoàn tiền **chỉ khi sự kiện bị huỷ** (UC23, UC43). Hệ t
 | `status` | `ENUM` | `Not Null` | `'COMPLETED'` (giữ `'PROCESSING'`, `'REJECTED'` cho dữ liệu cũ) |
 | `processed_at` | `TIMESTAMP` | `Nullable` | Thời điểm hoàn tiền thành công |
 
-### 3.15. Bảng `payout_settlements`
+### 3.17. Bảng `payout_settlements`
 Đối soát và thanh toán doanh thu sự kiện cho Nhà tổ chức (`1-1` với `events`) (UC34, UC42).
 
 | Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
@@ -669,45 +638,6 @@ Bản ghi hoàn tiền **chỉ khi sự kiện bị huỷ** (UC23, UC43). Hệ t
 | `settled_by_admin` | `UUID / ObjectId` | `FK, Nullable` | Admin thực hiện giải ngân (`users.user_id`) |
 | `settled_at` | `TIMESTAMP` | `Nullable` | Thời điểm hoàn tất giải ngân |
 
-### 3.16. Bảng `reviews`
-Đánh giá sự kiện sau khi tham dự (`1-1` với `tickets`) (UC20).
-
-| Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
-| :--- | :--- | :--- | :--- |
-| `review_id` | `UUID / ObjectId` | `PK` | Khóa chính đánh giá |
-| `event_id` | `UUID / ObjectId` | `FK, Not Null` | Sự kiện được đánh giá (`events.event_id`) |
-| `user_id` | `UUID / ObjectId` | `FK, Not Null` | Người viết đánh giá (`users.user_id`) |
-| `ticket_id` | `UUID / ObjectId` | `FK, UK, Not Null` | Vé xác thực đã tham gia (`tickets.ticket_id`) |
-| `rating` | `INT` | `Not Null` | Điểm đánh giá từ `1` đến `5` |
-| `comment` | `TEXT` | `Nullable` | Nội dung nhận xét |
-| `organizer_reply` | `TEXT` | `Nullable` | Phản hồi của Nhà tổ chức |
-| `created_at` | `TIMESTAMP` | `Not Null` | Thời điểm đánh giá |
-
-### 3.17. Bảng `wishlists_follows`
-Lưu sự kiện yêu thích và theo dõi Nhà tổ chức (UC08).
-
-| Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
-| :--- | :--- | :--- | :--- |
-| `id` | `UUID / ObjectId` | `PK` | Khóa chính |
-| `user_id` | `UUID / ObjectId` | `FK, Not Null` | Khách hàng thực hiện (`users.user_id`) |
-| `target_event_id` | `UUID / ObjectId` | `FK, Nullable` | Sự kiện được lưu yêu thích (`events.event_id`) |
-| `target_organizer_id` | `UUID / ObjectId` | `FK, Nullable` | Nhà tổ chức được theo dõi (`users.user_id`) |
-| `type` | `ENUM` | `Not Null` | `'WISHLIST_EVENT'`, `'FOLLOW_ORGANIZER'` |
-
-### 3.18. Bảng `audit_logs`
-Ghi nhận nhật ký thao tác hệ thống.
-
-| Tên cột (Field) | Kiểu dữ liệu | Ràng buộc | Mô tả chi tiết |
-| :--- | :--- | :--- | :--- |
-| `log_id` | `UUID / ObjectId` | `PK` | Khóa chính bản ghi log |
-| `actor_id` | `UUID / ObjectId` | `FK, Nullable` | Người thực hiện thao tác (`users.user_id`) |
-| `action` | `VARCHAR(100)` | `Not Null` | Mã hành động |
-| `target_entity` | `VARCHAR(100)` | `Not Null` | Tên bảng bị tác động |
-| `target_id` | `VARCHAR(100)` | `Not Null` | Khóa chính của bản ghi bị tác động |
-| `metadata` | `JSON` | `Nullable` | Chi tiết dữ liệu thay đổi |
-| `ip_address` | `VARCHAR(45)` | `Nullable` | Địa chỉ IP |
-| `created_at` | `TIMESTAMP` | `Not Null` | Thời gian thực hiện |
-
 ---
 
 ## 🛠️ 4. Ghi Chú Triển Khai Trên MongoDB
@@ -717,10 +647,9 @@ Database: **`eventtick`** (`mongodb://localhost:27017/eventtick`). Khởi tạo 
 ### 4.1. Quy ước ánh xạ
 * Khóa chính `xxx_id` trong tài liệu ↔ `_id` (**ObjectId**) của MongoDB; khóa ngoại là ObjectId.
 * Tên field giữ nguyên **snake_case** như trong tài liệu (`full_name`, `session_id`...).
-* Mỗi collection có **`$jsonSchema` validator** (`validationLevel: strict`, `validationAction: error`) kiểm tra field bắt buộc, kiểu dữ liệu, enum, độ dài, min/max (VD: `rating` 1–5, số lượng không âm).
+* Mỗi collection có **`$jsonSchema` validator** (`validationLevel: strict`, `validationAction: error`) kiểm tra field bắt buộc, kiểu dữ liệu, enum, độ dài, min/max (VD: `price`, `available_quantity` không âm).
 * Ràng buộc `UK` và quan hệ `1-1` được thực thi bằng **unique index** (VD: `payments.order_id`, `e_contracts.event_id`, `tickets.qr_hash_signature`, `vouchers(event_id, code)`, `seats(session_id, section_name, row_label, seat_number)`).
-* `wishlists_follows`: validator bắt buộc có `target_event_id` khi `type = WISHLIST_EVENT` và `target_organizer_id` khi `type = FOLLOW_ORGANIZER`; unique index riêng cho từng loại để không lưu trùng.
-* Model Mongoose tương ứng nằm ở [`backend/src/models/`](backend/src/models/) (20 model, mỗi model trỏ đúng tên collection).
+* Model Mongoose tương ứng nằm ở [`backend/src/models/`](backend/src/models/) (17 model, mỗi model trỏ đúng tên collection).
 
 ### 4.2. Trường mở rộng ngoài đặc tả
 Các field này được thêm để các luồng đã có (đăng nhập, xác thực email, hiển thị) hoạt động; chúng **không** nằm trong ERD gốc:
@@ -732,15 +661,13 @@ Các field này được thêm để các luồng đã có (đăng nhập, xác 
 | `events` | `slug`, `thumbnail_url`, `organizer_name`, `organizer_info`, `event_type`, `is_trending`, `is_special`, `lowest_price`, `rejection_reason`, `created_at` | Hiển thị trang chủ, tìm kiếm, lý do từ chối duyệt |
 | `ticket_tiers` | `description` | Mô tả hạng vé trên giao diện |
 | `ticket_tiers` | `zone_type` (`GA` / `SEATED`) | Khu bán theo số lượng hay theo ghế đánh số (do import sơ đồ đặt) |
-| `ticket_tiers` | `zone_shape` (JSON) — **không còn dùng** | Từng dùng cho sơ đồ vẽ tay; sơ đồ nay lấy từ `seatmap_layouts.svg_content` |
-| `event_sessions` | `seat_map` (JSON) — **không còn dùng** | Từng là khung vẽ sơ đồ; thay bằng `seatmap_layouts` |
 | `organizer_profiles` | `rejection_reason`, `submitted_at` | Lý do Admin từ chối KYC, thời điểm gửi hồ sơ |
 
 > Quy ước: `users.status = PENDING` nghĩa là chưa xác thực email, chuyển `ACTIVE` sau khi xác thực. Sự kiện bị Admin từ chối quay về `DRAFT` kèm `rejection_reason` (đặc tả không có trạng thái `REJECTED`).
 
 ### 4.3. Hạn chế hiện tại
 * Thanh toán thật dùng **SePay webhook** (xem 4.5). Endpoint thanh toán giả lập vẫn còn để test, phải tắt bằng `ENABLE_DEMO_PAYMENT=false` khi chạy thật.
-* Chưa có hoàn tiền tự động: giao dịch chuyển thừa/thiếu/đơn hết hạn chỉ được ghi vào `audit_logs` để hoàn thủ công.
+* Chưa có hoàn tiền tự động: giao dịch chuyển thừa/thiếu/đơn hết hạn được ghi nhận log hệ thống để hoàn thủ công.
 
 ### 4.4. Cơ chế giữ chỗ 10 phút (Redis + MongoDB)
 * **Vé đứng:** trừ nguyên tử `ticket_tiers.available_quantity` (`findOneAndUpdate` với điều kiện `>= quantity`).
@@ -753,7 +680,7 @@ Các field này được thêm để các luồng đã có (đăng nhập, xác 
 * Nội dung chuyển khoản = `<SEPAY_PAYMENT_PREFIX>` + mã đơn bỏ dấu gạch (VD đơn `ORD-20261108-AB12CD` → `DHORD20261108AB12CD`). Webhook tách mã đơn từ trường `code` hoặc `content` của SePay.
 * **Chống trùng:** `payments.transaction_ref = SEPAY-<id giao dịch SePay>` có unique index; `payments.order_id` unique (1-1 với `orders`) nên một đơn chỉ có đúng một payment kể cả khi webhook trùng gọi đồng thời.
 * **Chuyển thiếu:** không xác nhận đơn. **Chuyển thừa:** xác nhận đơn, ghi phần dư. **Đơn đã hết hạn/huỷ/đã trả:** không phát vé; kho vé và ghế được hoàn như thường.
-* **Đối soát:** mọi giao dịch tiền vào không khớp ghi vào `audit_logs` với `action = PAYMENT_UNMATCHED` và `metadata` gồm `reason`, `amount`, `content`, `orderCode`, `surplus` (nếu có).
+* **Đối soát:** mọi giao dịch tiền vào không khớp được ghi nhận log hệ thống chi tiết gồm `reason`, `amount`, `content`, `orderCode`, `surplus` (nếu có).
 * `payments.webhook_payload` lưu nguyên body SePay gửi để tra cứu.
 
 ### 4.6. Quy trình sự kiện và trạng thái
@@ -769,7 +696,6 @@ Huỷ sự kiện (CANCELLED): chỉ khi chưa có đơn PAID; nhả mọi đơn
 * Hạng vé: không giảm `total_quantity` thấp hơn số vé đã bán + đang giữ (`total_quantity - available_quantity`); không xoá hạng vé đã có vé bán.
 * Voucher đã có `used_count > 0` không đổi mức giảm và không xoá, chỉ tắt `is_active`.
 * Tài liệu nhạy cảm (`organizer_profiles.id_card_or_license_url`, `events.legal_doc_url`, `e_contracts.signed_pdf_url`, `organizer_signature_url`) lưu dạng tham chiếu `private:...` trong kho riêng tư (Cloudinary `authenticated` hoặc `backend/private-uploads/`), không bao giờ trả ra API; chỉ endpoint có kiểm tra quyền mới cấp link tải có hạn.
-* Mọi thao tác nhạy cảm ghi vào `audit_logs` (`KYC_*`, `EVENT_*`, `CONTRACT_*`, `TIER_*`, `SEATMAP_IMPORT`, `VOUCHER_*`, `PAYMENT_UNMATCHED`).
 
 ### 4.7. Sơ đồ chỗ ngồi: SVG + Excel (UC24)
 * **Đầu vào (Organizer gửi, Admin tải lên):** `zone_map.svg` — khu bán vé có `id="SEC_…"`, sân khấu `id="STAGE_…"`, phải có `viewBox`; `seating_manifest.xlsx` — cột `Section_ID`, `Section_Name`, `Type` (`SEATED`/`GA`), `Tier_Name`, `Capacity` (GA), `Row_Label`, `Seat_From`, `Seat_To`, `Aisles_After` (VD `5,15`), `Blocked_Seats` (VD `1,20`), `Layout` (`STRAIGHT` hàng thẳng, mặc định | `ARC` hàng cong quanh sân khấu). Mỗi khu có thể có nhiều dòng (mỗi dòng một hàng ghế).

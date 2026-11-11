@@ -9,33 +9,34 @@
 
 ## 🏗️ 1. Kiến Trúc Hệ Thống & Công Nghệ Sử Dụng (MERN Stack)
 
-Hệ thống chạy trên **MERN Stack (MongoDB, Express.js, React.js, Node.js)** theo mô hình monolith: một backend Express (`backend/`) và một ứng dụng React (`front-end/`). Danh sách dưới đây là công nghệ **đang dùng thật** (lấy từ `package.json`).
+Hệ thống chạy trên **MERN Stack (MongoDB, Express.js, React.js, Node.js)** theo mô hình monolith: một backend Express (`backend/`) và một ứng dụng React (`frontend/`). Danh sách dưới đây là công nghệ **đang dùng thật** (lấy từ `package.json`).
 
-* **Presentation Layer (`front-end/` — React.js):**
-  * **Core:** React 19 (Vite 7), React Router DOM 7, CSS thuần (từng trang một file `.css`), `react-icons`.
-  * **Data fetching:** Axios (`withCredentials`, cookie JWT), `axios-mock-adapter` cho mock khi phát triển. State dùng React Context (`AuthContext`), chưa dùng Redux / Zustand.
-  * **Sơ đồ chỗ ngồi:** SVG + React thuần (`features/seatmap`): ghế vẽ trực tiếp trên mặt bằng SVG, kéo / zoom, không dùng Canvas hay Konva. `dompurify` lọc SVG khi hiển thị.
-  * **Khác:** `socket.io-client` đã cài nhưng **backend chưa có Socket.IO**, nên chưa có cập nhật tồn kho realtime.
+* **Presentation Layer (`frontend/` — React.js):** giao diện làm lại theo bản thiết kế trắng đen trong `Website-Clone/` (`index.html`, `event-detail.html`), các trang nghiệp vụ còn lại dùng cùng phong cách. Bản giao diện cũ giữ ở `Website-Clone/oldfe/` để đối chiếu.
+  * **Core:** React 19 (Vite), React Router DOM 7, **Tailwind CSS 4** + lớp `tb-*` (`src/index.css`), `lucide-react`. Gọi API bằng `fetch` (`src/api/client.js`, `credentials: include`, cookie JWT). State dùng React Context (`AuthContext`, `ToastContext`).
+  * **Sơ đồ chỗ ngồi:** SVG + React thuần (`src/features/seatmap`): lấy mặt bằng SVG của Organizer, tô màu khu theo hạng vé, ghế vẽ đúng hình khu (kể cả hàng cong quanh sân khấu), kéo / zoom. `dompurify` lọc SVG và mọi HTML do nhà tổ chức nhập.
+  * **Mã QR:** `qrcode` vẽ QR ngay trên trình duyệt (không gửi mã vé ra dịch vụ ngoài); `html5-qrcode` quét bằng camera ở trang soát vé.
+  * **Khác:** chưa có Socket.IO nên chưa có cập nhật ghế realtime (xem mục *Việc cần làm*).
 
 * **API & Middleware Layer (`backend/` — Node.js & Express.js):**
   * **Core:** Node.js, Express 4 (REST API, tiền tố `/v1`), CORS cho `localhost`.
-  * **Bảo mật:** JWT (`jsonwebtoken`, cookie `token`, hạn 7 ngày, **không có refresh token**), `bcryptjs`, phân quyền theo vai trò đọc từ DB (`requireRole`, `requireVerifiedOrganizer`), nhật ký kiểm toán (`audit_logs`). Kiểm tra đầu vào viết tay trong controller (`utils/http.js`), **chưa dùng `joi` / `zod` và chưa có `express-rate-limit`**.
+  * **Bảo mật:** JWT (`jsonwebtoken`, cookie `token`, hạn 7 ngày, **không có refresh token**), `bcryptjs`, phân quyền theo vai trò đọc từ DB (`requireRole`, `requireVerifiedOrganizer`). Kiểm tra đầu vào viết tay trong controller (`utils/http.js`), **chưa dùng `joi` / `zod` và chưa có `express-rate-limit`**.
   * **Xử lý file:** `multer` (RAM), `exceljs` (đọc `seating_manifest.xlsx`), `cheerio` (đọc + lọc SVG), `pdfkit` (PDF hợp đồng, font `dejavu-fonts-ttf`).
 
 * **Business Logic Layer** — chia theo controller / service (chưa tách thành module riêng):
-  1. Identity & KYC: `authController`, `kycController`, `userFeaturesController`
+    1. Identity & KYC: `authController`, `kycController`
   2. Event, Inventory & CMS: `eventController`, `organizerEventController`, `seatMapController`, `adminController`
   3. Booking & Payment: `bookingController`, `paymentController`, `voucherController`, `bookingService`, `sepayService`, `seatLockService`
   4. E-Ticket, Resale & Check-in: `resaleController`, `bookingController` (check-in)
   5. E-Contract & Settlement: `contractController`, `contractService`, `adminController`
 
 * **Data Access & Infrastructure Layer:**
-  * **Primary Database:** **MongoDB** + **Mongoose** (20 collection, `$jsonSchema` validator và index tạo bởi `src/db/initDatabase.js`). **Chưa dùng Multi-Document Transaction** (cần Replica Set): tính toàn vẹn dựa vào cập nhật nguyên tử (`findOneAndUpdate` có điều kiện, unique index) và hoàn tác thủ công khi lỗi (xem mục 4.2).
+    * **Primary Database:** **MongoDB** + **Mongoose** (17 collection, `$jsonSchema` validator và index tạo bởi `src/db/initDatabase.js`). **Chưa dùng Multi-Document Transaction** (cần Replica Set): tính toàn vẹn dựa vào cập nhật nguyên tử (`findOneAndUpdate` có điều kiện, unique index) và hoàn tác thủ công khi lỗi (xem mục 4.2).
   * **Redis:** `ioredis` — khóa giữ ghế 10 phút (`TTL = 600s`, script Lua all-or-nothing). Redis tắt thì đặt ghế trả 503, các API còn lại vẫn chạy.
   * **Phòng chờ ảo:** có API (UC09), dùng Redis nếu sẵn có, không thì lưu trong RAM.
   * **Lưu trữ file:** **Cloudinary** (ảnh công khai; KYC / giấy phép / PDF hợp đồng ở chế độ riêng tư, tải qua link ký hết hạn 5 phút). Không cấu hình Cloudinary thì lưu cục bộ trong `backend/uploads/` và `backend/private-uploads/`.
   * **Thanh toán:** **SePay (VietQR chuyển khoản) qua webhook** (xác thực `Authorization: Apikey ...`). Chưa tích hợp VNPay / MoMo / Stripe dù enum `gateway` có sẵn các giá trị này.
-  * **Email:** **Nodemailer** (SMTP). Để trống SMTP thì link kích hoạt / đặt lại mật khẩu được in ra console.
+  * **Đăng nhập:** **chỉ Google OAuth2** (Authorization Code flow, gọi trực tiếp endpoint Google, không thêm thư viện). Đăng ký = đăng nhập Google lần đầu (tự tạo `CUSTOMER`, `status = ACTIVE`).
+  * **Email:** **Nodemailer** (SMTP Gmail). Gửi **email vé điện tử kèm mã QR** ngay sau khi thanh toán thành công (vé thường và vé bán lại) và email hủy sự kiện / hoàn tiền. Để trống SMTP thì nội dung email được in ra console.
 
 ---
 
@@ -60,7 +61,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | **UC05** | Khám phá & Xem danh sách sự kiện trang chủ | Event & CMS | - [x] |
 | **UC06** | Tìm kiếm & Lọc sự kiện nâng cao (Search, Filter, Pagination) | Event & CMS | - [x] |
 | **UC07** | Xem chi tiết sự kiện (Public UI/API) | Event & CMS | - [x] |
-| **UC08** | Theo dõi Nhà tổ chức & Lưu sự kiện yêu thích | Event & CMS | - [x] |
+| ~~UC08~~ | ~~Theo dõi Nhà tổ chức & Lưu sự kiện yêu thích~~ — **Đã bỏ** | Event & CMS | — |
 | **UC09** | Tham gia Phòng chờ ảo (Virtual Waiting Room) | Booking & Payment | - [x] |
 | **UC10** | Chọn hạng vé & Số lượng (General Admission) | Booking & Payment | - [x] |
 | **UC11** | Chọn ghế trực quan trên sơ đồ (Seat Map Selection) | Booking & Payment | - [x] |
@@ -72,7 +73,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | **UC17** | Nhận và quản lý Vé điện tử (My Tickets - QR Code) | Ticket & Check-in | - [x] |
 | ~~UC18~~ | ~~Yêu cầu Hoàn tiền / Hủy vé trực tuyến~~ — **Đã bỏ**: không hoàn vé lẻ, chỉ hoàn tiền khi sự kiện bị huỷ (UC43) | Contract & Finance | — |
 | **UC19** | Đăng bán lại vé trên chợ chính thức (Official Resale) | Ticket & Check-in | - [x] |
-| **UC20** | Đánh giá & Nhận xét sự kiện (Rating & Review) sau khi kết thúc *(Mới)* | Ticket & Check-in | - [x] |
+| ~~UC20~~ | ~~Đánh giá & Nhận xét sự kiện (Rating & Review) sau khi kết thúc~~ — **Đã bỏ** | Ticket & Check-in | — |
 
 ### 🏢 Actor 2: Organizer (Nhà tổ chức sự kiện — 14 Use Cases)
 
@@ -82,7 +83,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | **UC22** | Tạo sự kiện mới (Upload Cloudinary, cấu hình policy Resale/Gift) | Event & CMS | - [x] |
 | **UC23** | Cập nhật / Xóa (Hủy) thông tin sự kiện | Event & CMS | - [x] |
 | **UC24** | Thiết kế Sơ đồ ghế ngồi (Seat Map Builder) | Event & CMS | - [x] |
-| **UC25** | Cấu hình Hạng vé & Đợt mở bán trực tuyến (Ticket Tiers) | Event & CMS | - [x] |
+| **UC25** | Cấu hình Hạng vé & Đợt mở bán trực tuyến (Ticket Tiers — hỗ trợ zone_type: GA / SEATED) | Event & CMS | - [x] |
 | **UC26** | Thiết lập Form câu hỏi tùy chỉnh (Custom Checkout Form) | Event & CMS | - [x] |
 | **UC27** | Ký hợp đồng dịch vụ điện tử trên Canvas (E-Contract Signing) | Contract & Finance | - [x] |
 | **UC28** | Tạo và Quản lý Mã giảm giá / Khuyến mãi (Vouchers) | Booking & Payment | - [x] |
@@ -117,8 +118,8 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 
 | UC | Trạng thái | Đã có | Còn thiếu |
 | :--- | :---: | :--- | :--- |
-| UC01 | `[x]` | `POST /v1/auth/register`, gửi email xác thực (user mới có `status = PENDING`). Chỉ cho tự đăng ký `CUSTOMER` / `ORGANIZER` | Luồng gửi yêu cầu Organizer đầy đủ nằm ở UC21 |
-| UC02 | `[x]` | Đăng nhập (JWT cookie), xác thực email, gửi lại mã, quên / đặt lại mật khẩu; chặn tài khoản `BLOCKED` | — |
+| UC01 | `[x]` | Đăng ký **bằng Gmail**: `GET /v1/auth/google` → Google → `GET /v1/auth/google/callback` tự tạo tài khoản `CUSTOMER` (`ACTIVE`). `POST /v1/auth/register` đã tắt (410) | Luồng gửi yêu cầu Organizer đầy đủ nằm ở UC21 |
+| UC02 | `[x]` | Đăng nhập **Google OAuth2** (chống CSRF bằng cookie `state`, JWT cookie 7 ngày, chặn `BLOCKED`, liên kết tài khoản cũ theo email). Quên / đặt lại mật khẩu đã tắt (410). `POST /v1/auth/login` chỉ còn dùng cho 4 tài khoản demo, UI chỉ hiện ở chế độ dev | Bỏ hẳn `/login` khi demo/deploy |
 | UC03 | `[x]` | `GET/PUT /api/users/profile`, `/v1/auth/user`, `POST /v1/user/profile/avatar` (hỗ trợ multipart upload avatar qua multer/Cloudinary/local) | — |
 | UC04 | `[x]` | `POST /v1/auth/change-password` | — |
 | UC05 | `[x]` | `/v1/events/in-banner`, `/trending`, `/in-special`, `/recommend`, `/latest/*` | — |
@@ -138,7 +139,7 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | UC22 | `[x]` | `POST /v1/events` (hoặc `/v1/organizer/events`): chỉ Organizer đã KYC; nhiều suất diễn, mỗi suất có hạng vé riêng; validate đầy đủ (giá, số lượng, giờ, màu, form); chính sách bán lại / form khảo sát (`customFormSchema`, tối đa 20 câu hỏi); lưu **bản nháp** (`saveAsDraft`) hoặc gửi duyệt; ảnh phải đúng định dạng; giấy phép biểu diễn `PUT /v1/organizer/events/:id/legal-doc` lưu riêng tư, Admin xem được, `POST /:id/submit` DRAFT → PENDING. Giao diện `CreateEventPage.jsx` với wizard 4 bước, upload ảnh banner Cloudinary, hỗ trợ logging chi tiết lỗi cả frontend và backend. | — |
 | UC23 | `[x]` | `PUT /v1/organizer/events/:id`: DRAFT sửa được mọi thứ; sau khi duyệt chỉ sửa mô tả / thông tin tổ chức; `POST /:id/withdraw` PENDING → DRAFT để sửa; thêm / sửa / xoá suất diễn (chỉ DRAFT, không xoá suất đã có đơn); `POST /:id/cancel` huỷ sự kiện: hủy toàn bộ suất diễn, nhả đơn đang giữ chỗ, hoàn tiền hàng loạt cho mọi đơn đã thanh toán (`bulkRefundAndCancelEvent`), gửi email thông báo hủy vé cho người mua | Giao diện hủy sự kiện trên Front-end |
 | UC24 | `[x]` | **Admin dựng sơ đồ chỗ ngồi từ 2 file Organizer gửi:** `zone_map.svg` (khu `SEC_…`, sân khấu `STAGE_…`) + `seating_manifest.xlsx` (khu, hàng, số ghế, lối đi, ghế khóa, sức chứa GA). `POST /v1/admin/events/:id/seatmap` (`?dryRun=true` để xem trước), `GET` cùng đường dẫn, file mẫu `/v1/admin/seatmap/template.svg|xlsx`. Kiểm tra khu SVG ↔ Excel khớp 100%, hạng vé phải có ở mọi suất, chặn dựng lại khi đã bán vé, lọc mã độc trong SVG. Ghế tự sinh cho từng suất (tọa độ tự tính). `GET /v1/events/sessions/:sessionId/seat-map` (công khai) trả SVG + giá + số vé còn của từng khu. **Trộn được khu GA (tierId + quantity) và khu ghế (seatIds) trong cùng một đơn** | Giao diện Admin `/admin/seatmap`; trang chọn vé 1 tầng: ghế nằm ngay trên mặt bằng, bấm chọn trực tiếp (khu đứng bấm để chọn số lượng) |
-| UC25 | `[x]` | `POST /v1/organizer/sessions/:sessionId/tiers`, `PUT` / `DELETE /v1/organizer/tiers/:tierId`: giá, số lượng, min / max mỗi đơn, thời gian mở / đóng bán, màu khu. Giảm số lượng không được thấp hơn số vé đã bán + đang giữ (cập nhật nguyên tử); không xoá hạng vé đã bán; số lượng hạng vé theo ghế do sơ đồ (Admin import) quyết định, không sửa tay | — |
+| UC25 | `[x]` | `POST /v1/organizer/sessions/:sessionId/tiers`, `PUT` / `DELETE /v1/organizer/tiers/:tierId`: giá, số lượng, zone_type (GA / SEATED), min / max mỗi đơn, thời gian mở / đóng bán, màu khu. Giảm số lượng không được thấp hơn số vé đã bán + đang giữ (cập nhật nguyên tử); không xoá hạng vé đã bán; số lượng hạng vé theo ghế do sơ đồ (Admin import) quyết định, không sửa tay | — |
 | UC27 | `[x]` | `GET /v1/organizer/contracts`, `/:id` (xem điều khoản `termsHtml`), `POST /:id/sign` (`{ signature: data:image/png;base64,..., agree: true }`): kiểm tra PNG thật, ghi IP + thời điểm + mã băm SHA-256, xuất **PDF có dấu tiếng Việt** + chữ ký, hợp đồng `SIGNED` → sự kiện `PUBLISHED`; ký trùng / ký khi Admin vừa sửa hoa hồng bị chặn (409); `PUT /:id/reject` từ chối ký. Tải PDF `GET /:id/pdf`. Giao diện `OrganizerContractsPage.jsx` (`/organizer/contracts`) hoàn chỉnh với bảng danh sách hợp đồng, modal xem điều khoản, khung vẽ chữ ký HTML5 Canvas, và nút tải PDF trực tiếp. | — |
 | UC28 | `[x]` | `GET` / `POST /v1/organizer/events/:eventId/vouchers`, `PUT` / `DELETE /v1/organizer/vouchers/:id`: mã A–Z 0–9 _ - (3–30 ký tự, tự viết hoa), giảm % hoặc cố định, trần giảm (chỉ %), đơn tối thiểu, tổng lượt, lượt mỗi người, thời hạn; trùng mã trong cùng sự kiện → 409; voucher **đã có người dùng** không đổi mức giảm / không xoá, chỉ tắt (`isActive=false`); thống kê hiệu quả voucher qua `GET /v1/organizer/events/:eventId/vouchers/stats` (tổng lượt dùng, tiền giảm giá, doanh thu mang lại) | — |
 | UC39 | `[x]` | `GET /v1/admin/events?status=PENDING` (hàng chờ), `GET /v1/admin/events/:id/legal-doc`, `PUT /v1/admin/events/:id/approve` (**bắt buộc** `commissionRatePct`, tùy chọn `customTerms`; sự kiện PENDING → APPROVED + tự sinh hợp đồng `WAITING_SIGN`; 2 Admin duyệt cùng lúc chỉ 1 người thành công), `PUT /:id/reject` (bắt buộc lý do, trả về DRAFT). Endpoint duyệt cũ `PUT /v1/events/:id/approve` đã **gỡ**. Giao diện `AdminEventApprovalPage.jsx` (`/admin/events/pending`) hỗ trợ duyệt kèm cấu hình hoa hồng / điều khoản, từ chối và quản lý danh sách hợp đồng. | — |
@@ -160,14 +161,12 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 | `node scripts/test-organizer-events.js` | UC22, UC23, UC24, UC25, UC28 + đặt vé trộn khu GA / ghế + huỷ sự kiện (cần Redis) | 114 |
 | `node scripts/test-seatmap-parse.js` (`npm run test:seatmap`) | UC24: đọc SVG / Excel, lọc mã độc, tính tọa độ ghế (không cần server) | 11 |
 | `node scripts/test-seatmap-import.js` | UC24: Admin import SVG + Excel, kiểm tra lệch, dry-run, ghế khóa, lối đi, cột Layout, sơ đồ công khai | 31 |
-| `node scripts/test-all-remaining-ucs.js` | Toàn bộ 21 Use Cases còn lại (UC06, UC08, UC09, UC13, UC16, UC19, UC20, UC26, UC29, UC30, UC31, UC32, UC33, UC34, UC36, UC37, UC40, UC42, UC43, UC44) | 77 |
+| `node scripts/test-all-remaining-ucs.js` | Toàn bộ 19 Use Cases còn lại (UC06, UC09, UC13, UC16, UC19, UC26, UC29, UC30, UC31, UC32, UC33, UC34, UC36, UC37, UC40, UC42, UC43, UC44) | 77 |
 
 ---
 
 ## 🔜 Việc cần làm sau khi hoàn thành các chức năng
 
-* [ ] **Chuyển sang đăng nhập CHỈ bằng Google OAuth2** (`users.google_id` đã có sẵn trong schema). Khi chuyển: tắt `POST /v1/auth/register`, `POST /v1/auth/login`, quên / đổi mật khẩu; bỏ `password_hash` bắt buộc; tài khoản Google mới tạo với `status = ACTIVE` (Google đã xác thực email).
-  * **Hiện tại vẫn giữ đăng nhập email + mật khẩu và 4 tài khoản demo để thuận tiện test** — không xóa cho tới khi mọi chức năng hoàn tất.
 * [ ] **Socket.IO — cập nhật ghế realtime (ưu tiên cao nhất).** Hiện backend chưa có Socket.IO; trang chọn vé đã cài `socket.io-client`, đã gọi `io(...)`, `join_event_room` và nghe `event_stock_update` nhưng không có gì trả lời, nên nhiều khách cùng xem một sơ đồ sẽ thấy ghế cũ.
   * **Backend:** cài `socket.io`, gắn vào HTTP server trong `server.js` (dùng cùng quy tắc CORS `localhost` + cookie). Khi khách vào trang thì join phòng `session:<sessionId>`.
   * **Phát sự kiện** `seat_status_update { sessionId, seatIds, status }` ở đúng các điểm đổi trạng thái trong `bookingService`: giữ chỗ (`LOCKED`), nhả ghế khi hủy / hết hạn (`AVAILABLE`, kể cả job 30 giây), thanh toán xong (`SOLD`); giữ `event_stock_update { items: [{ ticketId, numberOfTicketLeft }] }` cho khu GA. Mongo vẫn là nguồn sự thật, Redis lỗi không được làm sập việc phát sự kiện.
@@ -178,16 +177,23 @@ Nhóm sử dụng bảng dưới đây để đánh dấu (`[x]`) tiến độ h
 * [x] SePay webhook (UC15) — đã code và test bằng giao dịch giả lập; **còn cần cấu hình thật**: xem mục *Cấu hình SePay* bên dưới.
 * [x] Cloudinary — **đã cấu hình đúng và kiểm chứng upload thật**: ảnh sự kiện (công khai), giấy tờ KYC / giấy phép biểu diễn / PDF hợp đồng (riêng tư, chỉ tải qua link có chữ ký hết hạn 5 phút; URL công khai đoán được trả 404). Hai bộ test upload (49 + 129 kiểm tra) đạt khi bật Cloudinary thật.
 * [ ] Trước khi demo/deploy: đặt `ENABLE_DEMO_PAYMENT=false` để tắt thanh toán giả lập.
-* [x] **Giao diện React cho toàn bộ Use Cases.** Đã xây dựng đầy đủ 100% giao diện Frontend (React 19 + Vite 7) đáp ứng định hướng chỉ bán vé online và quét vé QR HMAC tại cổng:
-  * **Customer:** Chợ vé thứ cấp chính thức (`ResaleMarketPage.jsx` danh sách sự kiện → `ResaleEventPage.jsx` chọn vé, trả lời form, thanh toán SePay; giá $\le 110\%$, không voucher), Đánh giá & nhận xét sự kiện có huy hiệu xác thực mua vé (`EventReviews.jsx`), Vé của tôi với mã QR điện tử trực tuyến (`MyTicketPage.jsx`).
-  * **Staff (100% Online Gate):** Máy quét mã QR camera thời gian thực tích hợp Web Audio beeps & xác thực chữ ký số HMAC-SHA256 (`StaffCheckInPage.jsx`), Dashboard lưu lượng vào cổng trực tiếp theo thời gian thực (`StaffTrafficPage.jsx`).
-  * **Organizer:** Form nộp hồ sơ định danh KYC & tải lên giấy phép doanh nghiệp (`OrganizerKycPage.jsx`), Ký hợp đồng điện tử trên HTML5 Signature Canvas & xuất PDF (`OrganizerContractsPage.jsx`), Quản lý mã giảm giá Voucher & phân tích chỉ số ROI (`OrganizerVouchersPage.jsx`), Dashboard vận hành sự kiện thời gian thực (phân bổ doanh thu, phân công nhân viên soát vé, xuất file CSV người tham dự, yêu cầu giải ngân) (`OrganizerEventDashboardPage.jsx`).
-  * **System Admin:** Tổng quan hệ thống & doanh thu GMV/hoa hồng (`AdminDashboardPage.jsx`), Quản trị người dùng & phân quyền RBAC (`AdminUserPage.jsx`), Quản lý danh mục & hoa hồng mặc định (`AdminCategoryPage.jsx`), Duyệt hồ sơ pháp nhân KYC (`AdminKycPage.jsx`), Phê duyệt sự kiện & thiết lập hợp đồng (`AdminEventApprovalPage.jsx`), Quản lý đối soát & giải ngân lợi nhuận (`AdminSettlementPage.jsx`), Hoàn tiền hàng loạt khi hủy sự kiện (`AdminRefundPage.jsx`), Chi trả tiền cho người bán lại vé (`AdminResalePayoutPage.jsx`).
-  * Đã định tuyến đầy đủ với `ProtectedRoute` theo vai trò (`CUSTOMER`, `ORGANIZER`, `STAFF`, `ADMIN`) và menu điều hướng theo vai trò tại `Header.jsx`. Build và lint đạt 100% (`vite build` hoàn tất không lỗi).
-* [ ] Thử giao diện sơ đồ ghế mới (một tầng) trong trình duyệt với SVG thật của Organizer; mới kiểm bằng build, lint và test thuật toán.
+* [x] **Giao diện React làm lại theo `Website-Clone` — đã xong 5 bước** (build đạt; từng trang đã gọi API thật). Trạng thái kiểm thử: **API đã test bằng script, giao diện đã chụp ảnh trên Edge headless cho một số trang; chưa bấm thử toàn bộ nút trên trình duyệt thật.**
+  * **Công khai & Customer:** trang chủ + chi tiết sự kiện dùng API thật (`events.service.js`); chọn vé đứng / ghế đánh số (sơ đồ SVG), ô **mã giảm giá** (`POST /v1/booking/voucher-preview`); bước **trả lời câu hỏi của nhà tổ chức** `/checkout/:orderId`; thanh toán SePay `/payment/:orderId` (QR, đếm ngược, tự kiểm tra); biên lai + vé QR `/payment-done`; *Vé của tôi*; hồ sơ (avatar, thông tin); tìm kiếm `/search` (lọc danh mục / thành phố / giá / sắp xếp / phân trang); chợ vé bán lại (gói bán lẻ / không bán lẻ, form câu hỏi).
+  * **Menu người dùng:** khách hàng chỉ thấy *Vé của tôi*, *Tài khoản*, *Đăng ký thành nhà tổ chức*; mục quản trị / dashboard chỉ hiện với Organizer, Staff, Admin.
+  * **Organizer:** KYC `/organizer/kyc` (khách thường cũng nộp được), hợp đồng + ký canvas + PDF, danh sách sự kiện (gửi duyệt / rút lại / huỷ), tạo / sửa sự kiện 4 bước (kèm form câu hỏi), quản lý sự kiện 5 tab (tổng quan, đơn hàng, người tham dự, nhân viên soát vé, đối soát; xuất CSV), lịch sử đối soát, voucher.
+  * **Staff:** soát vé bằng **camera** hoặc máy quét / nhập tay, kết quả lớn + âm báo; thống kê lưu lượng tự làm mới 6 giây; danh sách sự kiện được phân công `GET /v1/booking/staff/my-events`.
+  * **Admin:** tổng quan + doanh thu theo tháng; duyệt KYC; duyệt / từ chối sự kiện + đặt hoa hồng, hợp đồng, banner / xu hướng trang chủ, dựng sơ đồ ghế (kiểm tra trước), huỷ sự kiện & hoàn tiền hàng loạt; danh mục + hoa hồng mặc định; đối soát (duyệt → ghi nhận đã chuyển khoản) và danh sách hoàn tiền; người dùng & phân quyền; chi trả người bán lại vé.
+  * Định tuyến theo vai trò bằng `ProtectedRoute`. Nút "Tạo sự kiện" ở header dẫn khách thường sang trang KYC.
+  * **Còn thiếu:** thêm / sửa / xoá riêng từng suất diễn và hạng vé của sự kiện nháp trên giao diện (API đã có); đăng bán nhiều vé một gói từ *Vé của tôi*; trang Admin xem log audit.
+* [ ] **Bấm thử toàn bộ nút trên trình duyệt thật** theo từng vai trò (customer, organizer, staff, admin), gồm giữ ghế đánh số khi bật Redis.
 * [ ] Thêm giới hạn tần suất request (`express-rate-limit`) cho đăng nhập, đăng ký, quên mật khẩu và đặt vé; cân nhắc refresh token.
 * [ ] Dùng MongoDB transaction cho hai bước quan trọng nhất (giữ chỗ và xác nhận thanh toán + phát vé) — cần chạy MongoDB ở chế độ replica set.
 * [ ] Chưa có chuyển tiền tự động: hoàn tiền huỷ sự kiện (UC43) và chi trả cho người bán lại vé (UC19) đều do Admin chuyển khoản thủ công rồi ghi nhận trên hệ thống và chưa lưu file SVG / Excel gốc của sơ đồ (chỉ lưu kết quả đã đọc).
+* [ ] **ƯU TIÊN CUỐI CÙNG — Chuyển sang đăng nhập / đăng ký CHỈ bằng Gmail (Google OAuth2).** Làm sau khi mọi chức năng và giao diện đã hoàn tất.
+  * **Đã có sẵn (code xong, đang chạy song song):** nút "Tiếp tục với Google" ở `/login` và `/register`, `GET /v1/auth/google` + `/callback`, `POST /v1/auth/register` và quên / đặt lại mật khẩu đã tắt (410).
+  * **Còn lại khi chốt:** xóa `POST /v1/auth/login`, form tài khoản demo trên `LoginPage` và 4 tài khoản demo (`demo_*`); bỏ `password_hash` khỏi `initDatabase.js` validator; kiểm thử trọn vẹn luồng Google trên trình duyệt.
+  * **Hiện tại giữ** `/auth/login` và 4 tài khoản demo (chỉ hiện ở chế độ dev) để test các chức năng khác.
+  * Google Cloud Console phải có Authorized redirect URI `http://localhost:3000/v1/auth/google/callback` và JavaScript origin `http://localhost:5173`; ở chế độ Testing, thêm email thử vào *Test users*.
 
 ---
 
@@ -215,18 +221,18 @@ EventTick/
 │   │   ├── config/                         # db.js, redis.js, cloudinary.js
 │   │   ├── middleware/auth.js              # attachUser, requireAuth, requireRole, requireVerifiedOrganizer
 │   │   ├── routes/                         # auth, events, booking, payment, resale, kyc, contract, organizer, admin, user, category
-│   │   ├── controllers/                    # auth, kyc, userFeatures, event, organizerEvent, seatMap, booking, payment,
+│   │   ├── controllers/                    # auth, kyc, event, organizerEvent, seatMap, booking, payment,
 │   │   │                                   #   voucher, resale, contract, admin
 │   │   ├── services/                       # bookingService (giữ chỗ, hết hạn, phát vé), seatLockService (Redis),
 │   │   │                                   #   sepayService, contractService (PDF), privateStorage
-│   │   ├── models/                         # 20 model Mongoose (Event, EventSession, TicketTier, Seat, SeatmapLayout, Order...)
-│   │   ├── db/initDatabase.js              # Tạo 20 collection + $jsonSchema validator + index
+│   │   ├── models/                         # 17 model Mongoose (Event, EventSession, TicketTier, Seat, SeatmapLayout, Order...)
+│   │   ├── db/initDatabase.js              # Tạo 17 collection + $jsonSchema validator + index
 │   │   └── utils/                          # http, jwt, audit, upload, fileType, mailService, serializers, seed,
 │   │                                       #   seatGrid, seatmapTemplate
 │   ├── scripts/                            # test-*.js (kiểm thử), create-test-event.js, make-seatmap-samples.js
 │   └── package.json
 │
-├── front-end/                              # React 19 + Vite
+├── frontend/                               # React 19 + Vite + Tailwind 4
 │   ├── src/
 │   │   ├── pages/                          # auth, public, events, payment, user, admin
 │   │   ├── features/                       # booking, event-creation, events, seatmap (sơ đồ SVG + ghế)
@@ -237,7 +243,7 @@ EventTick/
 │   └── package.json
 │
 ├── samples/seatmap/                        # File mẫu: zone_map.svg, seating_manifest.xlsx, preview.html
-├── eventtick_database_specification.md     # Đặc tả 20 bảng
+├── eventtick_database_specification.md     # Đặc tả 17 bảng
 └── eventtick_project_readme.md             # Tài liệu này
 ```
 
@@ -247,7 +253,7 @@ EventTick/
 
 ### 4.1. Luồng Tạo Sự Kiện, Kiểm Duyệt & Ký Hợp Đồng Điện Tử (UC21 $\rightarrow$ UC27, UC38, UC39, UC41)
 
-1. **Organizer** hoàn tất xác thực pháp nhân (`kyc_status = VERIFIED`), khởi tạo thông tin sự kiện, thiết kế các suất diễn (`EventSession`), hạng vé (`TicketTier`), rồi gửi file sơ đồ (SVG + Excel) cho Admin dựng ghế (`Seat`) cho từng suất và tải giấy phép lên **Cloudinary**. Sự kiện lưu vào MongoDB ở trạng thái `DRAFT`, Organizer bấm gửi duyệt thì chuyển `PENDING`.
+1. **Organizer** hoàn tất xác thực pháp nhân (`kyc_status = VERIFIED`), khởi tạo thông tin sự kiện, thiết kế các suất diễn (`EventSession`), hạng vé (`TicketTier` với `zone_type: GA / SEATED`), rồi gửi file sơ đồ (SVG + Excel) cho Admin dựng ghế (`Seat`) cho từng suất và tải giấy phép lên **Cloudinary**. Sự kiện lưu vào MongoDB ở trạng thái `DRAFT`, Organizer bấm gửi duyệt thì chuyển `PENDING`.
 2. **Admin** kiểm duyệt nội dung và giấy phép. Nếu hợp lệ, Admin duyệt sự kiện (`APPROVED`), cấu hình `% hoa hồng` (`commission_rate_pct`) và hệ thống tự động sinh bản nháp Hợp đồng điện tử (`WAITING_SIGN`).
 3. **Organizer** ký trực tiếp trên khung vẽ Canvas (React). Backend Node.js ghép chữ ký + IP + Timestamp xuất ra file PDF (lưu riêng tư trên Cloudinary hoặc cục bộ), chuyển trạng thái hợp đồng sang `SIGNED` bằng cập nhật nguyên tử (chống ký trùng) và tự động xuất bản sự kiện (`PUBLISHED`) để mở bán công khai.
 
@@ -305,15 +311,15 @@ SMTP_PASS=
 ```bash
 cd backend
 npm install
-npm run db:init   # tạo 20 collection + validator + index trên database eventtick
+npm run db:init   # tạo 17 collection + validator + index trên database eventtick
 npm run seed      # (tuỳ chọn) nạp dữ liệu mẫu — XÓA dữ liệu nghiệp vụ cũ rồi nạp lại
 npm run dev       # chạy API tại http://localhost:3000 (route tiền tố /v1)
 ```
 
-### 5.4. Khởi chạy front-end
+### 5.4. Khởi chạy frontend
 
 ```bash
-cd front-end
+cd frontend
 npm install
 npm run dev       # http://localhost:5173 (Vite proxy /v1 và /uploads sang backend :3000)
 ```
@@ -328,7 +334,7 @@ node scripts/create-test-event.js    # tạo sự kiện "test" có sơ đồ (s
 
 Mở link in ra ở cuối lệnh, đăng nhập `demo_user` / `123456`. Admin (`demo_admin`) dựng sơ đồ cho sự kiện khác ở `/admin/seatmap`; file mẫu tải tại `/v1/admin/seatmap/template.svg` và `/template.xlsx`.
 
-Chi tiết cấu trúc 20 bảng: xem [eventtick_database_specification.md](eventtick_database_specification.md).
+Chi tiết cấu trúc 17 bảng: xem [eventtick_database_specification.md](eventtick_database_specification.md).
 
 ---
 
@@ -377,6 +383,36 @@ Phần này tổng hợp các hạng mục đã hoàn thành, tối ưu và kh�
     - Tích hợp khung vẽ chữ ký điện tử trực tiếp trên trình duyệt (HTML5 Canvas) với các nút Xóa vẽ lại và Ký xác nhận.
     - Gửi chữ ký dạng Base64 PNG lên backend, backend ghi nhận địa chỉ IP, thời gian ký, tính mã băm SHA-256, xuất file PDF hợp đồng có dấu tiếng Việt (DejaVu Sans) và chuyển trạng thái sự kiện sang `PUBLISHED`.
     - Tích hợp nút *"📥 Tải PDF hợp đồng"* trực tiếp từ hệ thống thông qua `GET /v1/organizer/contracts/:id/pdf` (tự động stream hoặc redirect sang link tải an toàn).
+
+### 6.7. Làm lại giao diện theo `Website-Clone` & các bổ sung nghiệp vụ
+- **Voucher khi mua vé:** trước đây backend có `voucherCode` nhưng giao diện không có ô nhập. Thêm `POST /v1/booking/voucher-preview { eventId, code, subtotal }` (xem trước, chưa trừ lượt); tách `findUsableVoucher` / `voucherDiscount` dùng chung với lúc đặt vé. Hủy đơn hoàn lại lượt dùng.
+- **Câu hỏi của nhà tổ chức:** bước `/checkout/:orderId` giữa giữ chỗ và thanh toán. `PUT /booking/orders/:id/checkout-info` kiểm tra theo `custom_form_schema`; `GET /payment/orders/:id/instructions` trả 422 `needsForm` nếu thiếu câu bắt buộc. Câu hỏi lưu ở `events.custom_form_schema`, câu trả lời ở `orders.attendee_form_answers`.
+- **Email vé có QR:** `ticketMailService` gửi sau thanh toán (vé thường và vé bán lại); QR dạng `<mã vé>.<chữ ký HMAC>`.
+- **QR cục bộ:** thay `api.qrserver.com` (gửi mã vé + chữ ký ra ngoài) bằng `qrcode` vẽ trên trình duyệt.
+- **Staff:** thêm `GET /v1/booking/staff/my-events`.
+- **Admin:** `GET /v1/admin/events` trả thêm tên nhà tổ chức, danh mục, hoa hồng mặc định, cờ `hasLegalDoc` (không lộ đường dẫn tệp riêng tư). Sửa đếm hồ sơ KYC chờ duyệt ở tổng quan (đang lọc sai trường `status` thay vì `kyc_status`, luôn ra 0).
+- **Sơ đồ ghế:** port `features/seatmap` từ bản cũ, đổi sang tông sáng; sự kiện không có SVG vẫn dùng lưới ghế.
+- **Dữ liệu thử đã tạo trong DB:** sự kiện "test-sodo Concert Sơ Đồ Mẫu" (216 ghế + 500 vé đứng, dựng từ `samples/seatmap/`, có form 6 câu hỏi). `backend/scripts/` không còn trong repo nên `create-test-event.js` và các `test-*.js` ở bảng kiểm thử phía trên hiện không chạy được.
+
+### 6.9. Giấy phép tổ chức sự kiện (bổ sung vào form tạo / sửa)
+- **Vấn đề:** backend đã có `PUT /v1/organizer/events/:id/legal-doc` nhưng giao diện tạo sự kiện mới không có chỗ tải lên, nên Admin bấm "Giấy phép" khi duyệt không có gì để xem.
+- **Giao diện:** bước **Thông tin** của form tạo / sửa có ô tải giấy phép (JPG, PNG, WEBP hoặc PDF, tối đa 10MB, lưu riêng tư). Tạo mới luôn lưu bản nháp trước (cần mã sự kiện), tải giấy phép lên, rồi nếu bấm **Gửi duyệt** thì gọi `POST /organizer/events/:id/submit`. Đã duyệt thì không thay được.
+- **Backend:** `POST /v1/events` với `saveAsDraft=false` trả 400; `POST /organizer/events/:id/submit` trả 400 nếu `legal_doc_url` rỗng. Tệp giả (không phải ảnh / PDF thật) bị từ chối. Admin mở giấy phép bằng link ký hết hạn 5 phút; Organizer gọi API Admin bị 403.
+- **Kiểm thử đã chạy (API thật):** tạo thẳng gửi duyệt bị chặn, gửi duyệt thiếu giấy phép bị chặn, tệp giả bị chặn, tải PDF thật thành công, gửi duyệt thành công, Admin thấy `hasLegalDoc = true` và mở được giấy phép.
+
+### 6.8. Organizer tự dựng sơ đồ (không qua Admin) & sơ đồ chỗ đứng
+- **Organizer tự dựng:** `POST /v1/organizer/events/:id/seatmap` (multipart `svgFile` + `excelFile`, `?dryRun=true` để xem trước), `GET /v1/organizer/events/:id/seatmap`, file mẫu `/v1/organizer/seatmap/template.svg|xlsx`. Dùng chung `runImport` với Admin, nhưng chỉ cho **chủ sự kiện** và chỉ khi sự kiện còn `DRAFT` / `PENDING`; đã duyệt hoặc mở bán thì trả 409 (sơ đồ đã nằm trong hợp đồng, cần Admin). Người khác gọi trả 404. Admin vẫn dựng được cho mọi sự kiện.
+- **Giao diện:** trang tạo / sửa sự kiện có thêm bước **"Sơ đồ (tùy chọn)"** (`features/seatmap/SeatmapBuilder.jsx`): tải 2 file, "Kiểm tra trước" (vẽ xem trước, chưa lưu), "Dựng sơ đồ", hiện lỗi chi tiết nếu file sai. Lưu bản nháp xong tự chuyển sang bước này. Sơ đồ **không bắt buộc**.
+- **Sự kiện chỉ có vé đứng cũng có sơ đồ:** khu đứng (`Type = GA`, cột `Capacity`) vẽ như một khu trên mặt bằng, khách bấm vào khu để chọn số lượng. `recalcEvent` đặt `has_seat_map` theo việc có `SeatmapLayout` (trước đây chỉ theo hạng vé `SEATED`). Giao diện chi tiết sự kiện đổi chữ thành "Sơ đồ khu vực chỗ đứng" khi không có ghế đánh số.
+- **Kiểm thử đã chạy (API thật):** dry-run, người ngoài bị 404, Excel sai tên hạng vé bị 400 kèm chi tiết, dựng thật 3 khu đứng (0 ghế, `has_seat_map = true`), dựng lại khi `PENDING` được, khi `PUBLISHED` bị 409, API công khai trả 3 khu đúng sức chứa, khách đặt 2 vé khu A rồi huỷ đơn.
+- **Dữ liệu thử còn trong DB:** sự kiện `ZZ-test-standing Concert chỉ vé đứng` (3 khu đứng, đã xuất bản) để thử giao diện; xóa khi không cần.
+
+### 6.6. Đăng nhập Google & Email vé (làm lại giao diện)
+- `googleAuthController.js`: `/v1/auth/google` (redirect, cookie `g_oauth_state` chống CSRF) và `/v1/auth/google/callback` (đổi code → token → userinfo, tìm theo `google_id` / email, tạo mới `ACTIVE`, set cookie JWT, redirect `CLIENT_URL/auth/google/success`). Lỗi redirect về `/login?error=<mã>`.
+- `User.password_hash` không còn bắt buộc; `/auth/register`, `/forgot-password`, `/reset-password` trả 410.
+- `ticketMailService.js` + `mailService.sendTicketEmail`: email vé kèm ảnh QR (nội dung `ticket_code.qr_hash_signature`, đúng định dạng `POST /v1/booking/check-in` chấp nhận), gọi sau `confirmPaymentAndIssueTickets` (cả vé thường và resale), lỗi gửi mail không ảnh hưởng thanh toán. Thêm dependency `qrcode`.
+- Frontend: `LoginPage` (dùng chung cho `/login` và `/register`, nút Google, form demo chỉ khi `import.meta.env.DEV`), `GoogleSuccessPage` (`/auth/google/success`); xóa trang đăng ký / xác thực email / quên / đặt lại mật khẩu.
+- Kiểm thử: `vite build` đạt; gọi thật backend: `/auth/google` → 302 Google, callback sai state → `/login?error=invalid_state`, register → 410; gửi thử email vé qua SMTP thật thành công. **Chưa thử luồng Google trọn vẹn trên trình duyệt và email vé từ thanh toán SePay thật.**
 
 ### 6.5. Đồng bộ kiến trúc hệ thống 100% Online Ticketing
 - **Mô hình kinh doanh thuần trực tuyến (Pure Online Ticketing):**

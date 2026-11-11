@@ -95,6 +95,21 @@ exports.updateCheckoutInfo = async (req, res) => {
   }
 };
 
+// POST /booking/voucher-preview { eventId, code, subtotal } — kiểm tra mã giảm giá, chưa trừ lượt dùng
+exports.previewVoucher = async (req, res) => {
+  try {
+    const r = await bookingService.previewVoucher({
+      eventId: req.body.eventId,
+      code: req.body.code,
+      buyerId: req.user.id,
+      subtotal: req.body.subtotal,
+    });
+    res.json({ success: true, ...r });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 // POST /booking/orders/:orderId/cancel — khách huỷ đơn chưa thanh toán (nhả ghế + hoàn kho)
 exports.cancelOrder = async (req, res) => {
   try {
@@ -255,6 +270,14 @@ exports.getOrder = async (req, res) => {
       body.payment = payment && { gateway: payment.gateway, amount: payment.amount, paidAt: payment.paid_at, transactionRef: payment.transaction_ref };
     } else {
       body.tickets = [];
+      const [event, session] = await Promise.all([
+        Event.findById(order.event_id).select("title banner_url thumbnail_url venue_name city custom_form_schema"),
+        EventSession.findById(order.session_id).select("name start_time"),
+      ]);
+      body.event = event && { _id: event._id, title: event.title, bannerUrl: event.thumbnail_url || event.banner_url, venueName: event.venue_name, city: event.city };
+      body.session = session && { _id: session._id, name: session.name, startTime: session.start_time };
+      body.formSchema = Array.isArray(event?.custom_form_schema) ? event.custom_form_schema : [];
+      body.attendeeFormAnswers = order.attendee_form_answers && !Array.isArray(order.attendee_form_answers) ? order.attendee_form_answers : {};
     }
     res.json(body);
   } catch (err) {
@@ -291,8 +314,10 @@ exports.checkInTicket = async (req, res) => {
 
     if (!code) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
 
+    const targetEventId = req.body?.eventId ? String(req.body.eventId).trim() : null;
+
     const ticket = await Ticket.findOne({ ticket_code: code })
-      .populate("event_id", "title venue_name")
+      .populate("event_id", "title venue_name organizer_id")
       .populate("tier_id", "name");
     if (!ticket) return res.status(404).json({ success: false, message: "Mã vé không hợp lệ" });
 
@@ -318,16 +343,77 @@ exports.checkInTicket = async (req, res) => {
       });
     }
 
-    // Chỉ ADMIN hoặc STAFF được phân công cho sự kiện này mới được soát vé
-    if (req.user.role !== "ADMIN") {
-      const assigned = await StaffAssignment.findOne({
-        staff_user_id: req.user.id,
-        event_id: ticket.event_id._id,
-        is_active: true,
-      });
-      if (!assigned) {
-        return res.status(403).json({ success: false, message: "Bạn không được phân công soát vé sự kiện này" });
+    // Phân quyền soát vé: Nhân viên (STAFF) được phân công sự kiện nào thì chỉ soát được vé của sự kiện đó
+    const ticketEventId = String(ticket.event_id?._id || ticket.event_id);
+
+    if (req.user.role === "STAFF") {
+      if (targetEventId) {
+        // Kiểm tra nhân viên có được phân công cho sự kiện đang chọn không
+        const assigned = await StaffAssignment.findOne({
+          staff_user_id: req.user.id,
+          event_id: targetEventId,
+          is_active: true,
+        });
+        if (!assigned) {
+          return res.status(403).json({
+            success: false,
+            message: "Bạn không được phân công soát vé cho sự kiện này",
+          });
+        }
+        // Kiểm tra vé quét có thuộc sự kiện đang chọn soát vé không
+        if (ticketEventId !== targetEventId) {
+          return res.status(400).json({
+            success: false,
+            message: `Vé không thuộc sự kiện đang chọn soát vé! Vé này thuộc sự kiện "${ticket.event_id?.title || 'khác'}".`,
+          });
+        }
+      } else {
+        // Nếu client không gửi targetEventId: kiểm tra nhân viên có được phân công cho sự kiện của vé không
+        const assigned = await StaffAssignment.findOne({
+          staff_user_id: req.user.id,
+          event_id: ticketEventId,
+          is_active: true,
+        });
+        if (!assigned) {
+          return res.status(403).json({
+            success: false,
+            message: "Bạn không được phân công soát vé sự kiện này",
+          });
+        }
       }
+    } else if (req.user.role === "ORGANIZER") {
+      const isOwner = String(ticket.event_id?.organizer_id) === String(req.user.id);
+      if (!isOwner) {
+        const assigned = await StaffAssignment.findOne({
+          staff_user_id: req.user.id,
+          event_id: ticketEventId,
+          is_active: true,
+        });
+        if (!assigned) {
+          return res.status(403).json({
+            success: false,
+            message: "Bạn không có quyền soát vé sự kiện này",
+          });
+        }
+      }
+      if (targetEventId && ticketEventId !== targetEventId) {
+        return res.status(400).json({
+          success: false,
+          message: `Vé không thuộc sự kiện đang chọn soát vé! Vé này thuộc sự kiện "${ticket.event_id?.title || 'khác'}".`,
+        });
+      }
+    } else if (req.user.role === "ADMIN") {
+      if (targetEventId && ticketEventId !== targetEventId) {
+        return res.status(400).json({
+          success: false,
+          message: `Vé không thuộc sự kiện đang chọn soát vé! Vé này thuộc sự kiện "${ticket.event_id?.title || 'khác'}".`,
+        });
+      }
+    } else {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền soát vé",
+      });
     }
 
     if (ticket.status === "USED") {
@@ -394,6 +480,35 @@ exports.getMyRefundRequests = async (req, res) => {
   }
 };
 
+// GET /booking/staff/my-events — sự kiện được phân công soát vé (ADMIN: mọi sự kiện đang mở bán; ORGANIZER: sự kiện của mình)
+exports.myStaffEvents = async (req, res) => {
+  try {
+    let filter;
+    if (req.user.role === "ADMIN") filter = { status: { $in: ["PUBLISHED", "ENDED"] } };
+    else {
+      const ids = (await StaffAssignment.find({ staff_user_id: req.user.id, is_active: true }).select("event_id")).map((a) => a.event_id);
+      filter = req.user.role === "ORGANIZER" ? { $or: [{ _id: { $in: ids } }, { organizer_id: req.user.id }] } : { _id: { $in: ids } };
+    }
+    const events = await Event.find(filter).sort({ start_time: -1 }).limit(100).select("title venue_name city start_time status");
+    const gates = await StaffAssignment.find({ staff_user_id: req.user.id, is_active: true }).select("event_id assigned_gate");
+    const gateByEvent = new Map(gates.map((g) => [String(g.event_id), g.assigned_gate]));
+    res.json({
+      success: true,
+      events: events.map((e) => ({
+        id: e._id,
+        title: e.title,
+        venueName: e.venue_name,
+        city: e.city,
+        startTime: e.start_time,
+        status: e.status,
+        assignedGate: gateByEvent.get(String(e._id)) || null,
+      })),
+    });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 // GET /booking/staff/events/:eventId/check-in-stats (UC36)
 exports.getStaffCheckInStats = async (req, res) => {
   try {
@@ -403,18 +518,39 @@ exports.getStaffCheckInStats = async (req, res) => {
     const event = await Event.findById(eventId);
     if (!event) return res.status(404).json({ success: false, message: "Không tìm thấy sự kiện" });
 
-    const isOrganizer = String(event.organizer_id) === String(req.user.id);
-    const isAdmin = req.user.role === "ADMIN";
-
-    if (!isAdmin && !isOrganizer) {
+    // Phân quyền: STAFF chỉ xem được sự kiện được phân công; ORGANIZER xem sự kiện của mình hoặc được phân công; ADMIN xem tất cả
+    if (req.user.role === "STAFF") {
       const assigned = await StaffAssignment.findOne({
         staff_user_id: req.user.id,
         event_id: eventId,
         is_active: true,
       });
       if (!assigned) {
-        return res.status(403).json({ success: false, message: "Bạn không có quyền xem thống kê soát vé sự kiện này" });
+        return res.status(403).json({
+          success: false,
+          message: "Bạn chỉ có thể xem thống kê của sự kiện được phân công",
+        });
       }
+    } else if (req.user.role === "ORGANIZER") {
+      const isOrganizer = String(event.organizer_id) === String(req.user.id);
+      if (!isOrganizer) {
+        const assigned = await StaffAssignment.findOne({
+          staff_user_id: req.user.id,
+          event_id: eventId,
+          is_active: true,
+        });
+        if (!assigned) {
+          return res.status(403).json({
+            success: false,
+            message: "Bạn không có quyền xem thống kê sự kiện này",
+          });
+        }
+      }
+    } else if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền xem thống kê sự kiện này",
+      });
     }
 
     const [totalValidAndUsed, checkedInCount, tiers] = await Promise.all([

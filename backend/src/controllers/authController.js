@@ -159,7 +159,7 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Sai tài khoản hoặc mật khẩu" });
     }
 
-    const ok = await bcrypt.compare(password, user.password_hash);
+    const ok = user.password_hash ? await bcrypt.compare(password, user.password_hash) : false;
     if (!ok) {
       return res.status(401).json({ success: false, message: "Sai tài khoản hoặc mật khẩu" });
     }
@@ -199,7 +199,7 @@ exports.logout = (req, res) => {
 // GET /auth  -> Header.jsx gọi cái này để biết đã đăng nhập chưa
 exports.me = async (req, res) => {
   if (!req.user) return res.json({ user: null });
-  const user = await User.findById(req.user.id).select("username full_name role status");
+  const user = await User.findById(req.user.id).select("username email avatar_url full_name role status");
   res.json({ user: user && user.status !== "BLOCKED" ? userToClient(user) : null });
 };
 

@@ -3,6 +3,7 @@ const upload = require("../utils/upload");
 const { requireVerifiedOrganizer } = require("../middleware/auth");
 const ev = require("../controllers/organizerEventController");
 const vc = require("../controllers/voucherController");
+const seatMapCtrl = require("../controllers/seatMapController");
 
 // Mọi route dưới /v1/organizer (trừ kyc, contracts đã có router riêng) cần Nhà tổ chức đã được duyệt KYC.
 router.use(requireVerifiedOrganizer);
@@ -19,6 +20,12 @@ router.put("/events/:id/legal-doc", upload.single("document"), ev.legalDoc);
 router.post("/events/:id/submit", ev.submit);
 router.post("/events/:id/withdraw", ev.withdraw);
 router.post("/events/:id/cancel", ev.cancel);
+
+// UC24: Organizer tự dựng sơ đồ chỗ ngồi / chỗ đứng từ SVG + Excel (không cần Admin)
+router.get("/seatmap/template.xlsx", seatMapCtrl.templateXlsx);
+router.get("/seatmap/template.svg", seatMapCtrl.templateSvg);
+router.get("/events/:id/seatmap", seatMapCtrl.adminGet);
+router.post("/events/:id/seatmap", seatMapCtrl.importUpload, seatMapCtrl.organizerImportSeatmap);
 
 // UC26: Biểu mẫu thông tin người tham dự (Custom Checkout Form)
 router.put("/events/:id/custom-form", ev.updateCustomForm);

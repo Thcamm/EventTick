@@ -15,7 +15,7 @@ function tierToClient(t) {
     description: t.description,
     zoneColor: t.zone_color,
     zoneType: t.zone_type || "GA",
-    zoneShape: t.zone_shape,
+    zone_type: t.zone_type || "GA",
     stock: t.total_quantity,
     totalCapacity: t.total_quantity,
     remaining: left,
@@ -81,7 +81,9 @@ function eventToClient(eventDoc, sessions = [], tiers = []) {
 function userToClient(u) {
   return {
     id: u._id,
-    username: u.username,
+    username: u.username || u.email,
+    email: u.email,
+    avatar: u.avatar_url,
     name: u.full_name,
     role: u.role,
   };

@@ -45,10 +45,38 @@ exports.adminListEvents = ah(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
   const [items, total] = await Promise.all([
-    Event.find(filter).sort({ created_at: 1 }).skip((page - 1) * limit).limit(limit).select("title organizer_id venue_name city start_time end_time status created_at rejection_reason"),
+    Event.find(filter)
+      .sort({ created_at: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate("organizer_id", "full_name email")
+      .populate("category_id", "name default_commission_pct")
+      .select("title organizer_id category_id organizer_name banner_url thumbnail_url venue_name city start_time end_time status created_at rejection_reason legal_doc_url lowest_price"),
     Event.countDocuments(filter),
   ]);
-  res.json({ success: true, page, limit, total, items });
+  const data = items.map((e) => {
+    const o = e.toObject();
+    return {
+      _id: o._id,
+      title: o.title,
+      bannerUrl: o.thumbnail_url || o.banner_url,
+      venueName: o.venue_name,
+      city: o.city,
+      startTime: o.start_time,
+      endTime: o.end_time,
+      status: o.status,
+      createdAt: o.created_at,
+      rejectionReason: o.rejection_reason,
+      lowestPrice: o.lowest_price,
+      hasLegalDoc: Boolean(o.legal_doc_url),
+      organizerName: o.organizer_name || o.organizer_id?.full_name,
+      organizerEmail: o.organizer_id?.email,
+      organizerId: o.organizer_id?._id,
+      categoryName: o.category_id?.name,
+      defaultCommissionPct: o.category_id?.default_commission_pct,
+    };
+  });
+  res.json({ success: true, page, limit, total, items: data });
 });
 
 // GET /v1/admin/events/:id/legal-doc — Admin xem giấy phép biểu diễn

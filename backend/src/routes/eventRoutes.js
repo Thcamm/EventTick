@@ -24,10 +24,6 @@ router.post('/', requireVerifiedOrganizer, upload.any(), require('../controllers
 router.post('/:id/waiting-room/join', ctrl.joinWaitingRoom);
 router.get('/:id/waiting-room/status', ctrl.waitingRoomStatus);
 
-// Đánh giá sự kiện (UC20)
-router.get('/:id/reviews', ctrl.listReviews);
-router.post('/:id/reviews', requireAuth, ctrl.createReview);
-
 // Chi tiết sự kiện theo ID
 router.get('/:id', ctrl.getById);
 

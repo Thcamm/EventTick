@@ -11,6 +11,13 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 
+// Câu hỏi mẫu của BTC, để test bước "Thông tin đặt vé" trước thanh toán.
+const DEMO_FORM = [
+  { key: "full_name", label: "Họ tên người tham dự", type: "text", required: true },
+  { key: "phone", label: "Số điện thoại liên hệ", type: "text", required: true },
+  { key: "tshirt", label: "Size áo", type: "select", required: false, options: ["S", "M", "L", "XL"] },
+];
+
 const connectDB = require("../config/db");
 const initDatabase = require("../db/initDatabase");
 const M = require("../models");
@@ -38,7 +45,7 @@ async function run() {
   // --- Xoá dữ liệu nghiệp vụ cũ ---
   console.log("\nXoá dữ liệu nghiệp vụ cũ...");
   for (const name of [
-    "AuditLog", "WishlistFollow", "Review", "PayoutSettlement", "RefundRequest", "ResaleListing",
+    "PayoutSettlement", "RefundRequest", "ResaleListing",
     "Ticket", "Payment", "Order", "Voucher", "Seat", "SeatmapLayout", "TicketTier", "EventSession", "EContract", "StaffAssignment", "Event",
     "OrganizerProfile",
   ]) {
@@ -162,6 +169,7 @@ async function run() {
           price: Number(t.price) || 0,
           total_quantity: Number(t.stock) || 50,
           available_quantity: Number(t.stock) || 50,
+          zone_type: "GA",
           min_per_order: 1,
           max_per_order: 4,
           sale_start_time: new Date(Date.now() - 24 * 3600 * 1000),
@@ -216,6 +224,7 @@ async function run() {
       allow_resale: true,
       max_resale_markup_pct: 10,
       status: 'PUBLISHED',
+      custom_form_schema: DEMO_FORM,
       organizer_name: 'Demo Concert Co., Ltd.',
       lowest_price: 200000,
     });
@@ -312,9 +321,6 @@ async function run() {
   });
   await M.Ticket.insertMany(ticketDocs);
   console.log(`  order ${order.order_code} (PAID) + ${qty} vé: TK-SEED-1, TK-SEED-2`);
-
-  await M.WishlistFollow.create({ user_id: customer._id, target_event_id: first._id, type: "WISHLIST_EVENT" });
-  await M.WishlistFollow.create({ user_id: customer._id, target_organizer_id: organizer._id, type: "FOLLOW_ORGANIZER" });
 
   console.log("\nSeed xong.");
   await mongoose.disconnect();

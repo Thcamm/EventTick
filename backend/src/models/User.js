@@ -5,7 +5,7 @@ const { options } = require("./_helpers");
 const userSchema = new Schema(
   {
     email: { type: String, required: true, lowercase: true, trim: true, maxlength: 255 },
-    password_hash: { type: String, required: true },
+    password_hash: { type: String }, // tài khoản Google: mật khẩu ngẫu nhiên, không dùng
     full_name: { type: String, required: true, trim: true, maxlength: 150 },
     phone: { type: String, trim: true, maxlength: 20 },
     avatar_url: { type: String },

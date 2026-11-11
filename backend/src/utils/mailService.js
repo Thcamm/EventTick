@@ -192,7 +192,52 @@ async function sendEventCancellationRefundEmail(toEmail, { buyerName, eventTitle
   }
 }
 
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/**
+ * Gửi email vé điện tử sau khi thanh toán. tickets: [{ code, tierName, seatLabel, qrData }]
+ * QR đính kèm dạng CID để hiển thị trong mọi trình đọc mail.
+ */
+async function sendTicketEmail(toEmail, { buyerName, eventTitle, sessionName, startTime, venue, orderCode, totalAmount, tickets }) {
+  if (!toEmail) return false;
+  const QRCode = require("qrcode");
+  const attachments = [];
+  const rows = [];
+  for (let i = 0; i < tickets.length; i++) {
+    const t = tickets[i];
+    const cid = `qr${i}@eventtick`;
+    attachments.push({ filename: `${t.code}.png`, content: await QRCode.toBuffer(t.qrData, { width: 240, margin: 1 }), cid });
+    rows.push(`<tr><td style="padding:12px;border-bottom:1px solid #e5e7eb"><strong>${esc(t.tierName)}</strong>${t.seatLabel ? " — " + esc(t.seatLabel) : ""}<br><span style="font-family:monospace;color:#6b7280">${esc(t.code)}</span></td><td style="padding:12px;border-bottom:1px solid #e5e7eb;text-align:right"><img src="cid:${cid}" width="120" height="120" alt="QR"></td></tr>`);
+  }
+  const when = startTime ? new Date(startTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "";
+  const mailOptions = {
+    from: FROM_EMAIL,
+    to: toEmail,
+    subject: `[EventTick] Vé điện tử đơn ${orderCode} — ${eventTitle}`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
+      <h2 style="margin-top:0">Thanh toán thành công</h2>
+      <p>Xin chào <strong>${esc(buyerName || "Quý khách")}</strong>, vé của bạn cho <strong>${esc(eventTitle)}</strong> đã sẵn sàng.</p>
+      <ul><li>Mã đơn: <strong>${esc(orderCode)}</strong></li><li>Suất: ${esc(sessionName)} ${esc(when)}</li><li>Địa điểm: ${esc(venue)}</li><li>Tổng tiền: ${Number(totalAmount || 0).toLocaleString("vi-VN")} VNĐ</li></ul>
+      <table style="width:100%;border-collapse:collapse">${rows.join("")}</table>
+      <p style="color:#6b7280;font-size:13px">Xuất trình mã QR trên điện thoại tại cổng. Không chia sẻ mã QR cho người khác.</p></div>`,
+    attachments,
+  };
+  if (!transporter) {
+    console.log(`📧 [MÔ PHỎNG EMAIL VÉ] Tới: ${toEmail} | Đơn: ${orderCode} | ${tickets.length} vé`);
+    return true;
+  }
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✉️ Đã gửi email vé đến: ${toEmail}`);
+    return true;
+  } catch (err) {
+    console.error(`❌ Gửi email vé thất bại (${toEmail}):`, err.message);
+    return false;
+  }
+}
+
 module.exports = {
+  sendTicketEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendEventCancellationRefundEmail,

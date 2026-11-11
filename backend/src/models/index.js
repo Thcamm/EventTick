@@ -16,7 +16,4 @@ module.exports = {
   ResaleListing: require("./ResaleListing"),
   RefundRequest: require("./RefundRequest"),
   PayoutSettlement: require("./PayoutSettlement"),
-  Review: require("./Review"),
-  WishlistFollow: require("./WishlistFollow"),
-  AuditLog: require("./AuditLog"),
 };

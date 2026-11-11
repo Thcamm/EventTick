@@ -14,6 +14,7 @@ const {
   EContract,
 } = require("../models");
 const seatLock = require("./seatLockService");
+const ticketMail = require("./ticketMailService");
 const mailService = require("../utils/mailService");
 
 const HOLD_MS = seatLock.HOLD_SECONDS * 1000;
@@ -199,21 +200,7 @@ async function createOrderHold({
     let voucher = null;
     let discount = 0;
     if (voucherCode && String(voucherCode).trim()) {
-      const code = String(voucherCode).trim().toUpperCase();
-      voucher = await Voucher.findOne({ event_id: event._id, code });
-      if (!voucher || !voucher.is_active) throw httpError("Mã giảm giá không tồn tại hoặc đã bị vô hiệu hóa", 400);
-      if (now < voucher.valid_from || now > voucher.valid_until) throw httpError("Mã giảm giá chưa/đã hết hiệu lực", 400);
-      if (subtotal < (voucher.min_order_amount || 0)) {
-        throw httpError(`Đơn hàng chưa đạt giá trị tối thiểu ${voucher.min_order_amount.toLocaleString()} ₫`, 400);
-      }
-      const usedByUser = await Order.countDocuments({
-        buyer_id: buyerId,
-        voucher_id: voucher._id,
-        status: { $in: ["PENDING_PAYMENT", "PAID"] },
-      });
-      if (usedByUser >= (voucher.max_per_user || 1)) {
-        throw httpError(`Bạn đã hết số lần dùng mã này (tối đa ${voucher.max_per_user})`, 400);
-      }
+      voucher = await findUsableVoucher({ eventId: event._id, code: voucherCode, buyerId, subtotal, now });
       const bumped = await Voucher.findOneAndUpdate(
         { _id: voucher._id, $expr: { $lt: ["$used_count", "$usage_limit"] } },
         { $inc: { used_count: 1 } },
@@ -222,12 +209,7 @@ async function createOrderHold({
       if (!bumped) throw httpError("Mã giảm giá đã hết lượt sử dụng", 400);
       voucherBumped = voucher._id;
 
-      if (voucher.discount_type === "PERCENT") {
-        discount = Math.round((subtotal * voucher.discount_value) / 100);
-        if (voucher.max_discount_amount > 0) discount = Math.min(discount, voucher.max_discount_amount);
-      } else {
-        discount = Math.min(voucher.discount_value, subtotal);
-      }
+      discount = voucherDiscount(voucher, subtotal);
     }
 
     return await Order.create({
@@ -304,6 +286,46 @@ async function cancelPendingOrder({ orderId, buyerId }) {
   return releaseOrder({ _id: order._id }, "CANCELLED");
 }
 
+/** Số tiền giảm của voucher trên tổng tiền vé. */
+function voucherDiscount(voucher, subtotal) {
+  if (voucher.discount_type === "PERCENT") {
+    const d = Math.round((subtotal * voucher.discount_value) / 100);
+    return voucher.max_discount_amount > 0 ? Math.min(d, voucher.max_discount_amount) : d;
+  }
+  return Math.min(voucher.discount_value, subtotal);
+}
+
+/** Tìm voucher dùng được cho sự kiện + người mua + tổng tiền; ném lỗi tiếng Việt nếu không hợp lệ (chưa trừ lượt). */
+async function findUsableVoucher({ eventId, code, buyerId, subtotal, now = new Date() }) {
+  const c = String(code || "").trim().toUpperCase();
+  const voucher = c ? await Voucher.findOne({ event_id: eventId, code: c }) : null;
+  if (!voucher || !voucher.is_active) throw httpError("Mã giảm giá không tồn tại hoặc đã bị vô hiệu hóa", 400);
+  if (now < voucher.valid_from || now > voucher.valid_until) throw httpError("Mã giảm giá chưa/đã hết hiệu lực", 400);
+  if (subtotal < (voucher.min_order_amount || 0)) {
+    throw httpError(`Đơn hàng chưa đạt giá trị tối thiểu ${voucher.min_order_amount.toLocaleString("vi-VN")} ₫`, 400);
+  }
+  if (voucher.usage_limit && voucher.used_count >= voucher.usage_limit) throw httpError("Mã giảm giá đã hết lượt sử dụng", 400);
+  const usedByUser = await Order.countDocuments({
+    buyer_id: buyerId,
+    voucher_id: voucher._id,
+    status: { $in: ["PENDING_PAYMENT", "PAID"] },
+  });
+  if (usedByUser >= (voucher.max_per_user || 1)) {
+    throw httpError(`Bạn đã hết số lần dùng mã này (tối đa ${voucher.max_per_user})`, 400);
+  }
+  return voucher;
+}
+
+/** Xem trước voucher (không trừ lượt): trả về số tiền giảm và tổng sau giảm. */
+async function previewVoucher({ eventId, code, buyerId, subtotal }) {
+  const sub = Number(subtotal);
+  if (!Number.isFinite(sub) || sub <= 0) throw httpError("Chưa chọn vé nào để áp dụng mã", 400);
+  if (!mongoose.isValidObjectId(eventId)) throw httpError("Sự kiện không hợp lệ", 400);
+  const voucher = await findUsableVoucher({ eventId, code, buyerId, subtotal: sub });
+  const discount = voucherDiscount(voucher, sub);
+  return { code: voucher.code, discountType: voucher.discount_type, discountValue: voucher.discount_value, discount, total: Math.max(0, sub - discount) };
+}
+
 /**
  * 3. XÁC NHẬN THANH TOÁN: orders -> PAID, payments (1-1), sinh tickets, ghế -> SOLD.
  */
@@ -343,6 +365,7 @@ async function confirmPaymentAndIssueTickets({ orderId, buyerId, gateway = "VNPA
 
   if (claimed.order_type === "RESALE") {
     const tickets = await issueResaleTickets(claimed);
+    ticketMail.sendTicketEmailForOrder(claimed, tickets);
     return { order: claimed, payment, tickets };
   }
 
@@ -373,6 +396,7 @@ async function confirmPaymentAndIssueTickets({ orderId, buyerId, gateway = "VNPA
     }
   }
   const tickets = await Ticket.insertMany(docs);
+  ticketMail.sendTicketEmailForOrder(claimed, tickets);
 
   return { order: claimed, payment, tickets };
 }
@@ -570,7 +594,12 @@ async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatIn
   if (!["PENDING_PAYMENT", "PAID"].includes(order.status)) throw httpError("Không thể cập nhật thông tin đơn hàng ở trạng thái này", 400);
 
   if (attendeeFormAnswers !== undefined) {
-    order.attendee_form_answers = attendeeFormAnswers;
+    if (order.status === "PENDING_PAYMENT") {
+      const ev = await Event.findById(order.event_id).select("custom_form_schema");
+      order.attendee_form_answers = validateFormAnswers(ev?.custom_form_schema, attendeeFormAnswers);
+    } else {
+      throw httpError("Đơn đã thanh toán, không sửa được câu trả lời", 400);
+    }
   }
   if (vatInvoiceInfo !== undefined) {
     order.vat_invoice_info = vatInvoiceInfo;
@@ -692,6 +721,7 @@ function startExpirationJob(intervalMs = 30_000) {
 module.exports = {
   createOrderHold,
   createResaleOrderHold,
+  previewVoucher,
   validateFormAnswers,
   updateCheckoutInfo,
   bulkRefundAndCancelEvent,

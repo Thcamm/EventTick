@@ -1,6 +1,6 @@
 /**
  * Khởi tạo database EventTick trên MongoDB theo eventtick_database_specification.md
- * - Tạo 20 collections với $jsonSchema validator (kiểu dữ liệu, required, enum)
+ * - Tạo 17 collections với $jsonSchema validator (kiểu dữ liệu, required, enum)
  * - Tạo index (unique / FK lookup / TTL-like query)
  *
  * PK `xxx_id` trong spec được ánh xạ thành `_id` (ObjectId) của MongoDB.
@@ -181,7 +181,6 @@ const collections = {
         sale_end_time: date,
         zone_color: strN(20),
         zone_type: enumOf("GA", "SEATED"),
-        zone_shape: jsonN,
       }
     ),
     indexes: [[{ event_id: 1 }], [{ session_id: 1 }]],
@@ -388,62 +387,10 @@ const collections = {
     ),
     indexes: [[{ event_id: 1 }, { unique: true }], [{ organizer_id: 1 }], [{ status: 1 }]],
   },
-
-  reviews: {
-    validator: schema(["event_id", "user_id", "ticket_id", "rating", "created_at"], {
-      event_id: oid,
-      user_id: oid,
-      ticket_id: oid,
-      rating: { ...int, minimum: 1, maximum: 5 },
-      comment: strN(),
-      organizer_reply: strN(),
-      created_at: date,
-    }),
-    indexes: [[{ ticket_id: 1 }, { unique: true }], [{ event_id: 1, created_at: -1 }], [{ user_id: 1 }]],
-  },
-
-  wishlists_follows: {
-    validator: {
-      $and: [
-        schema(["user_id", "type"], {
-          user_id: oid,
-          target_event_id: oidN,
-          target_organizer_id: oidN,
-          type: enumOf("WISHLIST_EVENT", "FOLLOW_ORGANIZER"),
-        }),
-        {
-          $or: [
-            { type: "WISHLIST_EVENT", target_event_id: { $type: "objectId" } },
-            { type: "FOLLOW_ORGANIZER", target_organizer_id: { $type: "objectId" } },
-          ],
-        },
-      ],
-    },
-    indexes: [
-      [{ user_id: 1, target_event_id: 1 },
-        { unique: true, partialFilterExpression: { type: "WISHLIST_EVENT" }, name: "uniq_wishlist_event" }],
-      [{ user_id: 1, target_organizer_id: 1 },
-        { unique: true, partialFilterExpression: { type: "FOLLOW_ORGANIZER" }, name: "uniq_follow_organizer" }],
-      [{ target_organizer_id: 1 }],
-    ],
-  },
-
-  audit_logs: {
-    validator: schema(["action", "target_entity", "target_id", "created_at"], {
-      actor_id: oidN,
-      action: str(100),
-      target_entity: str(100),
-      target_id: str(100),
-      metadata: jsonN,
-      ip_address: strN(45),
-      created_at: date,
-    }),
-    indexes: [[{ created_at: -1 }], [{ actor_id: 1, created_at: -1 }], [{ target_entity: 1, target_id: 1 }]],
-  },
 };
 
 // ---------- run ----------
-/** Tạo/cập nhật 20 collection + validator + index trên kết nối mongoose đang mở. */
+/** Tạo/cập nhật 17 collection + validator + index trên kết nối mongoose đang mở. */
 async function initDatabase(connection = mongoose.connection) {
   const db = connection.db;
 

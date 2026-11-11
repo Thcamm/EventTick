@@ -167,9 +167,16 @@ const publicSection = (s) => ({ sectionId: s.section_id, name: s.name, type: s.t
 
 // ------------------------------------------------------------------ Admin: dựng sơ đồ
 // POST /v1/admin/events/:id/seatmap   (multipart: svgFile + excelFile; ?dryRun=true chỉ kiểm tra, không ghi)
-async function runImport(req, res) {
-  const event = await Event.findById(validId(req.params.id, "ID sự kiện"));
+async function runImport(req, res, { ownerOnly = false } = {}) {
+  const event = await Event.findOne({
+    _id: validId(req.params.id, "ID sự kiện"),
+    ...(ownerOnly ? { organizer_id: req.user.id } : {}),
+  });
   if (!event) throw httpError("Không tìm thấy sự kiện", 404);
+  // Organizer chỉ tự dựng khi sự kiện còn bản nháp / chờ duyệt (đã duyệt thì sơ đồ nằm trong hợp đồng, cần Admin)
+  if (ownerOnly && !["DRAFT", "PENDING"].includes(event.status)) {
+    throw fail(`Sự kiện đã ${event.status === "PUBLISHED" ? "mở bán" : "được duyệt"}, không tự dựng lại sơ đồ được. Hãy liên hệ Admin.`, null, 409);
+  }
   if (!IMPORTABLE.includes(event.status)) throw fail(`Không dựng sơ đồ được khi sự kiện ở trạng thái ${event.status}`, null, 409);
 
   const svgFile = req.files?.svgFile?.[0], xlsFile = req.files?.excelFile?.[0];
@@ -272,18 +279,23 @@ async function runImport(req, res) {
   await audit(req, "SEATMAP_IMPORT", "events", event._id, { sections: sections.length, seatsPerSession: seatedTotal, sessions: sessions.length });
   res.status(201).json({ success: true, message: "Đã dựng sơ đồ chỗ ngồi", summary });
 }
-exports.importSeatmap = ah(async (req, res) => {
-  try {
-    await runImport(req, res);
-  } catch (err) {
-    if (!err.details) throw err; // ah() trả đúng mã lỗi
-    res.status(err.statusCode || 400).json({ success: false, message: err.message, details: err.details });
-  }
-});
+const importWith = (opts) =>
+  ah(async (req, res) => {
+    try {
+      await runImport(req, res, opts);
+    } catch (err) {
+      if (!err.details) throw err; // ah() trả đúng mã lỗi
+      res.status(err.statusCode || 400).json({ success: false, message: err.message, details: err.details });
+    }
+  });
+exports.importSeatmap = importWith({});
+// POST /v1/organizer/events/:id/seatmap — Organizer tự dựng sơ đồ cho sự kiện của mình
+exports.organizerImportSeatmap = importWith({ ownerOnly: true });
 
-// GET /v1/admin/events/:id/seatmap — sơ đồ hiện tại của sự kiện
+// GET /v1/admin/events/:id/seatmap — sơ đồ hiện tại của sự kiện (Admin: mọi sự kiện; Organizer: sự kiện của mình)
 exports.adminGet = ah(async (req, res) => {
   const id = validId(req.params.id, "ID sự kiện");
+  if (req.user?.role !== "ADMIN" && !(await Event.exists({ _id: id, organizer_id: req.user?.id }))) throw httpError("Không tìm thấy sự kiện", 404);
   const layout = await SeatmapLayout.findOne({ event_id: id });
   if (!layout) return res.json({ success: true, hasMap: false });
   res.json({ success: true, hasMap: true, svgContent: layout.svg_content, updatedAt: layout.updated_at, summary: { sections: layout.sections.map(publicSection), stageIds: layout.stage_ids }, seats: previewSeats(layout.toObject().sections) });

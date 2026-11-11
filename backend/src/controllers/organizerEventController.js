@@ -89,11 +89,16 @@ function parseTier(raw, sessionStart, label = "Hạng vé") {
     safeTo = new Date(from.getTime() + HOUR);
   }
   if (r.zoneColor && !COLOR.test(r.zoneColor)) throw httpError(`${label}: zoneColor phải dạng #RRGGBB`, 400);
+  const rawZoneType = String(r.zoneType ?? r.zone_type ?? "GA").toUpperCase();
+  if (!["GA", "SEATED"].includes(rawZoneType)) {
+    throw httpError(`${label}: zoneType phải là "GA" hoặc "SEATED"`, 400);
+  }
   return {
     name: str(r.name, 150, `${label}: tên`),
     price: num(r.price, 0, 100_000_000, `${label}: giá`),
     total_quantity: total,
     available_quantity: total,
+    zone_type: rawZoneType,
     min_per_order: min,
     max_per_order: max,
     sale_start_time: from,
@@ -143,8 +148,13 @@ async function findCategory(name) {
 
 /** Cập nhật các trường tổng hợp của sự kiện sau khi đổi suất / hạng vé. */
 async function recalcEvent(eventId) {
-  const [sessions, tiers] = await Promise.all([EventSession.find({ event_id: eventId }), TicketTier.find({ event_id: eventId })]);
-  const upd = { lowest_price: tiers.length ? Math.min(...tiers.map((t) => t.price)) : 0, has_seat_map: tiers.some((t) => t.zone_type === "SEATED") };
+  const { SeatmapLayout } = require("../models");
+  const [sessions, tiers, layout] = await Promise.all([
+    EventSession.find({ event_id: eventId }),
+    TicketTier.find({ event_id: eventId }),
+    SeatmapLayout.exists({ event_id: eventId }),
+  ]);
+  const upd = { lowest_price: tiers.length ? Math.min(...tiers.map((t) => t.price)) : 0, has_seat_map: Boolean(layout) || tiers.some((t) => t.zone_type === "SEATED") };
   if (sessions.length) {
     upd.start_time = new Date(Math.min(...sessions.map((s) => s.start_time)));
     upd.end_time = new Date(Math.max(...sessions.map((s) => s.end_time)));
@@ -160,7 +170,7 @@ function tierToClient(t) {
     _id: o._id, sessionId: o.session_id, name: o.name, price: o.price, totalQuantity: o.total_quantity,
     availableQuantity: o.available_quantity, used: usedOf(o), minPerOrder: o.min_per_order, maxPerOrder: o.max_per_order,
     saleStartTime: o.sale_start_time, saleEndTime: o.sale_end_time, zoneColor: o.zone_color, zoneType: o.zone_type || "GA",
-    zoneShape: o.zone_shape, description: o.description,
+    zone_type: o.zone_type || "GA", description: o.description,
   };
 }
 
@@ -193,6 +203,9 @@ exports.create = ah(async (req, res) => {
   }
 
   const draft = bool(payload.saveAsDraft);
+  if (!draft) {
+    throw httpError("Gửi duyệt cần có giấy phép tổ chức sự kiện: hãy lưu bản nháp, tải giấy phép lên rồi bấm Gửi duyệt", 400);
+  }
   const title = str(payload.title || payload.eventName, 255, "tên sự kiện");
   const category = await findCategory(payload.category || "Khác");
   console.log(`📂 [Tạo sự kiện] Khớp danh mục DB: "${category.name}" (ID: ${category._id})`);
@@ -407,6 +420,7 @@ exports.legalDoc = ah(async (req, res) => {
 exports.submit = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   if (e.status !== "DRAFT") throw httpError(`Chỉ gửi duyệt được sự kiện DRAFT (hiện: ${e.status})`, 409);
+  if (!e.legal_doc_url) throw httpError("Cần tải lên giấy phép tổ chức sự kiện trước khi gửi duyệt (vào Chỉnh sửa, bước Thông tin)", 400);
   const [sessions, tiers] = await Promise.all([EventSession.find({ event_id: e._id }), TicketTier.find({ event_id: e._id })]);
   if (!sessions.length) throw httpError("Cần ít nhất 1 suất diễn", 400);
   for (const s of sessions) {
@@ -527,6 +541,11 @@ exports.updateTier = ah(async (req, res) => {
   if (b.zoneColor !== undefined) {
     if (!COLOR.test(b.zoneColor)) throw httpError("zoneColor phải dạng #RRGGBB", 400);
     set.zone_color = b.zoneColor;
+  }
+  if (b.zoneType !== undefined || b.zone_type !== undefined) {
+    const rawZoneType = String(b.zoneType ?? b.zone_type).toUpperCase();
+    if (!["GA", "SEATED"].includes(rawZoneType)) throw httpError("zoneType phải là GA hoặc SEATED", 400);
+    set.zone_type = rawZoneType;
   }
   const min = b.minPerOrder !== undefined ? intIn(b.minPerOrder, 1, 100, "minPerOrder") : tier.min_per_order;
   const max = b.maxPerOrder !== undefined ? intIn(b.maxPerOrder, 1, 100, "maxPerOrder") : tier.max_per_order;

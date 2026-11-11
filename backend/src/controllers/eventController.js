@@ -1,8 +1,7 @@
-const { Event, EventSession, TicketTier, Category, Review, Ticket } = require('../models');
+const { Event, EventSession, TicketTier, Category, Ticket } = require('../models');
 const { saveUploadedFile } = require('../utils/upload');
 const { eventToClient } = require('../utils/serializers');
 const { redis } = require('../config/redis');
-const { audit } = require('../utils/audit');
 
 const PUBLIC_STATUS = { $in: ['APPROVED', 'PUBLISHED'] };
 
@@ -348,94 +347,6 @@ exports.waitingRoomStatus = async (req, res) => {
       passGranted: true,
       passToken: `PASS-${event._id}-${identifier}-${Date.now()}`,
       estimatedWaitTimeSeconds: 0,
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// GET /events/:id/reviews (UC20)
-exports.listReviews = async (req, res) => {
-  try {
-    const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
-
-    const reviews = await Review.find({ event_id: event._id })
-      .populate('user_id', 'full_name username avatar_url')
-      .populate('ticket_id', 'ticket_code')
-      .sort({ created_at: -1 });
-
-    const total = reviews.length;
-    const avg = total > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / total : 0;
-
-    res.json({
-      success: true,
-      totalReviews: total,
-      averageRating: Math.round(avg * 10) / 10,
-      reviews: reviews.map((r) => ({
-        _id: r._id,
-        user: {
-          id: r.user_id?._id,
-          name: r.user_id?.full_name || r.user_id?.username || 'Khách',
-          avatarUrl: r.user_id?.avatar_url,
-        },
-        rating: r.rating,
-        comment: r.comment,
-        organizerReply: r.organizer_reply,
-        createdAt: r.created_at,
-      })),
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// POST /events/:id/reviews (UC20)
-exports.createReview = async (req, res) => {
-  try {
-    const event = await Event.findById(req.params.id);
-    if (!event) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
-
-    const { ticketId, rating, comment } = req.body;
-    const rNum = Number(rating);
-    if (!Number.isInteger(rNum) || rNum < 1 || rNum > 5) {
-      return res.status(400).json({ success: false, message: 'Số sao đánh giá phải từ 1 đến 5' });
-    }
-
-    let ticket = null;
-    if (ticketId) {
-      ticket = await Ticket.findOne({ _id: ticketId, event_id: event._id, owner_id: req.user.id });
-    } else {
-      ticket = await Ticket.findOne({ event_id: event._id, owner_id: req.user.id });
-    }
-
-    if (!ticket) {
-      return res.status(403).json({ success: false, message: 'Bạn không sở hữu vé hợp lệ cho sự kiện này' });
-    }
-
-    const existed = await Review.findOne({
-      $or: [{ ticket_id: ticket._id }, { event_id: event._id, user_id: req.user.id }],
-    });
-    if (existed) {
-      return res.status(409).json({ success: false, message: 'Bạn đã đánh giá sự kiện này trước đó' });
-    }
-
-    const review = await Review.create({
-      event_id: event._id,
-      user_id: req.user.id,
-      ticket_id: ticket._id,
-      rating: rNum,
-      comment: String(comment || '')
-        .trim()
-        .slice(0, 2000),
-    });
-
-    await audit(req, 'REVIEW_CREATE', 'reviews', review._id, { eventId: event._id, rating: rNum });
-
-    res.status(201).json({
-      success: true,
-      message: 'Cảm ơn bạn đã gửi đánh giá!',
-      reviewId: review._id,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -18,8 +18,6 @@ const schema = new Schema(
     description: { type: String }, // mở rộng: mô tả hiển thị trên UI
     // Sơ đồ khu vực: GA = bán theo số lượng; SEATED = bán theo ghế đánh số (bảng seats)
     zone_type: { type: String, enum: ["GA", "SEATED"], default: "GA" },
-    // Hình dạng khu trên sơ đồ: { type: rect|ellipse|polygon|path, ... } (xem seatMapController)
-    zone_shape: { type: Schema.Types.Mixed },
   },
   options,
 );
