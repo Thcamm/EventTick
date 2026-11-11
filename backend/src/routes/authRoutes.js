@@ -3,10 +3,18 @@ const ctrl = require("../controllers/authController");
 const { requireAuth } = require("../middleware/auth");
 const upload = require("../utils/upload");
 
-// Đăng ký & Kích hoạt email
+// Đăng ký & Kích hoạt email (UC01, UC03)
 router.post("/register", ctrl.register);
 router.get("/verify-email", ctrl.verifyEmail);
 router.post("/resend-verification", ctrl.resendVerification);
+
+// Xác thực Google OAuth (UC01, UC02)
+router.post("/google", ctrl.googleAuth);
+router.get("/google", ctrl.googleRedirect);
+router.get("/google/callback", ctrl.googleCallback);
+
+// Yêu cầu nâng cấp vai trò Nhà tổ chức (UC01)
+router.post("/request-organizer", requireAuth, ctrl.requestOrganizer);
 
 // Đăng nhập & Đăng xuất
 router.post("/login", ctrl.login);

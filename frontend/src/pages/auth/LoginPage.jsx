@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authService } from '../../services/auth.service';
 import { PATHS, getRoleHomePath } from '../../routes/paths';
+import GoogleAuthButton from '../../components/GoogleAuthButton';
 
 export default function LoginPage() {
   const [form, setForm] = useState({ username: '', password: '' });
@@ -67,6 +68,19 @@ export default function LoginPage() {
             </button>
           </div>
         )}
+
+        {/* Nút đăng nhập nhanh bằng Google */}
+        <div className='mb-5'>
+          <GoogleAuthButton text='Đăng nhập với Google' />
+        </div>
+
+        <div className='relative flex items-center justify-center mb-5'>
+          <div className='border-t border-[#e4e4e7] w-full' />
+          <span className='bg-white px-3 text-[11px] font-bold uppercase tracking-wider text-[#71717a] shrink-0'>
+            HOẶC BẰNG MẬT KHẨU
+          </span>
+          <div className='border-t border-[#e4e4e7] w-full' />
+        </div>
 
         <form onSubmit={handleSubmit} className='space-y-4'>
           <div>

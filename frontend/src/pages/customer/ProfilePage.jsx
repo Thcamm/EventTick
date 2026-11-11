@@ -3,11 +3,13 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { authService } from '../../services/auth.service';
-import { User, Lock, Mail, Phone, Calendar, ShieldCheck } from 'lucide-react';
+import { User, Lock, Mail, Phone, Calendar, ShieldCheck, Building2 } from 'lucide-react';
 
 export default function ProfilePage() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, requestOrganizer } = useAuth();
   const { showToast } = useToast();
+
+  const [requestingOrganizer, setRequestingOrganizer] = useState(false);
 
   const [profile, setProfile] = useState({
     name: '',
@@ -91,6 +93,22 @@ export default function ProfilePage() {
     }
   };
 
+  const handleUpgradeOrganizer = async () => {
+    const orgName = window.prompt('Nhập tên đơn vị / thương hiệu tổ chức của bạn:');
+    if (!orgName || !orgName.trim()) return;
+
+    setRequestingOrganizer(true);
+    try {
+      await requestOrganizer({ organizationName: orgName.trim() });
+      await refreshUser();
+      showToast('Nâng cấp lên Nhà tổ chức thành công! Vui lòng nộp hồ sơ KYC.');
+    } catch (err) {
+      showToast(err.message || 'Không thể gửi yêu cầu nâng cấp');
+    } finally {
+      setRequestingOrganizer(false);
+    }
+  };
+
   return (
     <div className='max-w-3xl mx-auto py-10 px-4 space-y-8'>
       <div>
@@ -118,6 +136,28 @@ export default function ProfilePage() {
           </span>
         </div>
       </div>
+
+      {/* Nâng cấp Nhà tổ chức (UC01) nếu là CUSTOMER */}
+      {user?.role === 'CUSTOMER' && (
+        <div className='bg-[#f9f9fb] border border-[#e4e4e7] rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4'>
+          <div>
+            <div className='text-sm font-bold text-[#09090b] flex items-center gap-2'>
+              <Building2 size={16} />
+              <span>Bạn muốn tổ chức và phân phối vé sự kiện?</span>
+            </div>
+            <p className='text-xs text-[#71717a] mt-1 max-w-lg'>
+              Nâng cấp tài khoản lên Nhà tổ chức (Organizer) để mở quyền tạo sự kiện, thiết kế sơ đồ ghế ngồi và cấu hình mở bán vé.
+            </p>
+          </div>
+          <button
+            type='button'
+            onClick={handleUpgradeOrganizer}
+            disabled={requestingOrganizer}
+            className='px-5 py-2.5 bg-[#09090b] text-white text-xs font-semibold rounded-full hover:bg-[#27272a] disabled:opacity-50 transition-colors shrink-0'>
+            {requestingOrganizer ? 'Đang xử lý...' : 'Nâng cấp lên Nhà tổ chức'}
+          </button>
+        </div>
+      )}
 
       {/* Personal Info Form */}
       <div className='bg-white border border-[#e4e4e7] rounded-2xl p-6'>

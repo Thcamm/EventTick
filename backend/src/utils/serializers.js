@@ -79,11 +79,24 @@ function eventToClient(eventDoc, sessions = [], tiers = []) {
 }
 
 function userToClient(u) {
+  const status =
+    u.status && !(u.status === "PENDING" && u.isEmailVerified === true)
+      ? u.status
+      : u.isActive === false
+      ? "BLOCKED"
+      : u.isEmailVerified === true
+      ? "ACTIVE"
+      : u.status || "ACTIVE";
   return {
     id: u._id,
     username: u.username,
-    name: u.full_name,
+    name: u.full_name || u.fullName || u.username,
     role: u.role,
+    email: u.email,
+    avatarUrl: u.avatar_url || u.avatarUrl,
+    status,
+    isOrganizerRequested: Boolean(u.is_organizer_requested),
+    authProvider: u.auth_provider || "LOCAL",
   };
 }
 

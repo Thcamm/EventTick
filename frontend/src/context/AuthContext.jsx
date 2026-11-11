@@ -6,7 +6,9 @@ const AuthContext = createContext({
   loading: true,
   unverifiedEmail: null,
   login: async () => {},
+  loginWithGoogle: async () => {},
   register: async () => {},
+  requestOrganizer: async () => {},
   logout: async () => {},
   refreshUser: async () => {},
   setUnverifiedEmail: () => {},
@@ -48,6 +50,19 @@ export function AuthProvider({ children }) {
     return authService.register(payload);
   };
 
+  const loginWithGoogle = async (googlePayload) => {
+    setUnverifiedEmail(null);
+    const res = await authService.loginWithGoogle(googlePayload);
+    setUser(res.user);
+    return res;
+  };
+
+  const requestOrganizer = async (payload) => {
+    const res = await authService.requestOrganizer(payload);
+    setUser(res.user);
+    return res;
+  };
+
   const logout = async () => {
     try {
       await authService.logout();
@@ -63,7 +78,9 @@ export function AuthProvider({ children }) {
         loading,
         unverifiedEmail,
         login,
+        loginWithGoogle,
         register,
+        requestOrganizer,
         logout,
         refreshUser,
         setUnverifiedEmail,

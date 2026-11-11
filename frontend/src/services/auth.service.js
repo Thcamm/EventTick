@@ -3,7 +3,9 @@ import { api } from '../api/client';
 export const authService = {
   getMe: () => api.get('/auth'),
   login: (credentials) => api.post('/auth/login', credentials),
+  loginWithGoogle: (payload) => api.post('/auth/google', payload),
   register: (payload) => api.post('/auth/register', payload),
+  requestOrganizer: (payload) => api.post('/auth/request-organizer', payload),
   logout: () => api.get('/auth/logout'),
   verifyEmail: (token) => api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`),
   resendVerification: (email) => api.post('/auth/resend-verification', { email }),
