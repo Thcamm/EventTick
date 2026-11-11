@@ -14,6 +14,14 @@ router.post("/register", gone);
 router.get("/verify-email", ctrl.verifyEmail);
 router.post("/resend-verification", ctrl.resendVerification);
 
+// Xác thực Google OAuth (UC01, UC02)
+router.post("/google", ctrl.googleAuth);
+router.get("/google", ctrl.googleRedirect);
+router.get("/google/callback", ctrl.googleCallback);
+
+// Yêu cầu nâng cấp vai trò Nhà tổ chức (UC01)
+router.post("/request-organizer", requireAuth, ctrl.requestOrganizer);
+
 // Đăng nhập & Đăng xuất
 router.post("/login", ctrl.login);
 router.get("/logout", ctrl.logout);
