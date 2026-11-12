@@ -1,18 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Download,
-  Loader2,
-  Plus,
-  Trash2,
-  Wallet,
-  Users,
-  ReceiptText,
-  BarChart3,
-  ScanLine,
-  History,
-} from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Plus, Trash2, Wallet, Users, ReceiptText, BarChart3, ScanLine, History, CheckCircle2, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { inputCls } from '../../components/FormField';
@@ -91,6 +79,8 @@ export default function OrganizerEventDashboardPage() {
   const [search, setSearch] = useState('');
   const [staffForm, setStaffForm] = useState({ email: '', assignedGate: 'Cổng chính' });
   const [busy, setBusy] = useState(false);
+  const [payoutConfirm, setPayoutConfirm] = useState(false);
+  const [payoutSuccess, setPayoutSuccess] = useState(null);
 
   const load = useCallback(
     async (which) => {
@@ -155,12 +145,17 @@ export default function OrganizerEventDashboardPage() {
     }
   };
 
-  const requestPayout = async () => {
-    if (!window.confirm('Gửi yêu cầu đối soát và rút tiền cho sự kiện này?')) return;
+  const requestPayout = () => setPayoutConfirm(true);
+
+  const submitPayout = async () => {
+    setPayoutConfirm(false);
     setBusy(true);
     try {
       const r = await api.post(`/organizer/events/${id}/payout/request`, {});
-      showToast(r.message || 'Đã gửi yêu cầu đối soát');
+      setPayoutSuccess({
+        message: r.message || 'Đã gửi yêu cầu đối soát và rút tiền thành công!',
+        amount: ps?.netPayoutAmount,
+      });
       load('payout');
     } catch (err) {
       showToast(err.message || 'Không gửi được yêu cầu');
@@ -484,6 +479,37 @@ export default function OrganizerEventDashboardPage() {
           <p className='text-xs text-[#71717a]'>
             Tiền được chuyển vào tài khoản ngân hàng trong hồ sơ KYC sau khi Admin duyệt đối soát.
           </p>
+        </div>
+      )}
+      {payoutConfirm && (
+        <div className='fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4' onClick={() => setPayoutConfirm(false)}>
+          <div className='relative bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl' onClick={(e) => e.stopPropagation()}>
+            <button type='button' onClick={() => setPayoutConfirm(false)} className='absolute top-4 right-4 text-[#71717a] hover:text-[#09090b]' aria-label='Đóng'>
+              <X size={18} />
+            </button>
+            <Wallet size={40} className='mx-auto text-[#09090b]' />
+            <h2 className='text-xl font-bold text-center'>Xác nhận yêu cầu đối soát</h2>
+            <p className='text-sm text-center text-[#52525b]'>Bạn có chắc muốn gửi yêu cầu đối soát và rút tiền cho sự kiện này?</p>
+            <div className='flex gap-3'>
+              <button type='button' className='tb-btn w-full' onClick={() => setPayoutConfirm(false)}>Hủy</button>
+              <button type='button' className='tb-btn tb-btn-solid w-full' onClick={submitPayout}>Xác nhận gửi</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {payoutSuccess && (
+        <div className='fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4' onClick={() => setPayoutSuccess(null)}>
+          <div className='relative bg-white rounded-2xl p-6 w-full max-w-md text-center space-y-4 shadow-xl' onClick={(e) => e.stopPropagation()}>
+            <button type='button' onClick={() => setPayoutSuccess(null)} className='absolute top-4 right-4 text-[#71717a] hover:text-[#09090b]' aria-label='Đóng'>
+              <X size={18} />
+            </button>
+            <CheckCircle2 size={48} className='mx-auto text-emerald-600' />
+            <h2 className='text-xl font-bold'>Đã gửi yêu cầu đối soát</h2>
+            <p className='text-sm text-[#52525b]'>{payoutSuccess.message}</p>
+            <p className='text-lg font-extrabold'>{money(payoutSuccess.amount)}</p>
+            <p className='text-xs text-[#71717a]'>Admin sẽ kiểm tra và chuyển khoản vào tài khoản ngân hàng trong hồ sơ KYC của bạn.</p>
+            <button type='button' className='tb-btn tb-btn-solid w-full' onClick={() => setPayoutSuccess(null)}>Đã hiểu</button>
+          </div>
         </div>
       )}
     </div>

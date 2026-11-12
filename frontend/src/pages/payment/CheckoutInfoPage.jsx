@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { Calendar, MapPin, Clock, Loader2, ClipboardList } from 'lucide-react';
+import { Calendar, MapPin, Clock, Loader2, ClipboardList, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { PATHS } from '../../routes/paths';
@@ -37,6 +37,7 @@ export default function CheckoutInfoPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
   const [error, setError] = useState('');
   const [timeLeft, setTimeLeft] = useState(null);
 
@@ -57,10 +58,11 @@ export default function CheckoutInfoPage() {
         }
         setData(res);
         setAnswers(res.attendeeFormAnswers || {});
+        const savedBankInfo = res.refundBankInfo || res.order?.refund_bank_info || res.order?.refundBankInfo || {};
         setRefundBankInfo({
-          bankName: res.refundBankInfo?.bank_name || '',
-          accountNo: res.refundBankInfo?.account_no || '',
-          accountHolder: res.refundBankInfo?.account_holder || '',
+          bankName: savedBankInfo.bank_name || savedBankInfo.bankName || '',
+          accountNo: savedBankInfo.account_no || savedBankInfo.accountNo || '',
+          accountHolder: savedBankInfo.account_holder || savedBankInfo.accountHolder || '',
         });
       })
       .catch((err) => {
@@ -123,8 +125,10 @@ export default function CheckoutInfoPage() {
     }
   };
 
-  const cancelOrder = async () => {
-    if (!window.confirm('Huỷ đơn hàng này? Ghế / vé đã giữ sẽ được trả lại.')) return;
+  const cancelOrder = () => setCancelConfirm(true);
+
+  const confirmCancelOrder = async () => {
+    setCancelConfirm(false);
     setCancelling(true);
     try {
       await api.post(`/booking/orders/${orderId}/cancel`);
@@ -285,6 +289,21 @@ export default function CheckoutInfoPage() {
           </div>
         </aside>
       </div>
+      {cancelConfirm && (
+        <div className='fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4' onClick={() => setCancelConfirm(false)}>
+          <div className='relative bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl' onClick={(e) => e.stopPropagation()}>
+            <button type='button' onClick={() => setCancelConfirm(false)} className='absolute top-4 right-4 text-[#71717a] hover:text-[#09090b]' aria-label='Đóng'>
+              <X size={18} />
+            </button>
+            <h2 className='text-xl font-bold text-center'>Hủy đơn hàng?</h2>
+            <p className='text-sm text-center text-[#52525b]'>Ghế / vé đã giữ sẽ được trả lại. Bạn có chắc muốn hủy đơn hàng này không?</p>
+            <div className='flex gap-3'>
+              <button type='button' className='tb-btn w-full' onClick={() => setCancelConfirm(false)}>Không</button>
+              <button type='button' className='tb-btn tb-btn-solid w-full' onClick={confirmCancelOrder}>Hủy đơn hàng</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

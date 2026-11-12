@@ -272,7 +272,15 @@ exports.listPayouts = ah(async (req, res) => {
         name: p.organizer_id?.full_name || p.organizer_id?.username,
         email: p.organizer_id?.email,
         phone: p.organizer_id?.phone,
-        bankAccount: profileMap[p.organizer_id?._id?.toString()]?.bank_account_info,
+        bankAccount: (() => {
+          const profile = profileMap[p.organizer_id?._id?.toString()];
+          if (!profile) return null;
+          return {
+            bankName: profile.bank_name,
+            accountNo: profile.bank_account_no,
+            accountHolder: profile.bank_account_holder,
+          };
+        })(),
       },
       grossRevenue: p.gross_revenue,
       platformCommissionAmt: p.platform_commission_amt,
@@ -282,7 +290,7 @@ exports.listPayouts = ah(async (req, res) => {
       bankTransferReceiptUrl: p.bank_transfer_receipt_url,
       settledByAdmin: p.settled_by_admin?.full_name || p.settled_by_admin?.username,
       settledAt: p.settled_at,
-      createdAt: p.created_at,
+      createdAt: p.created_at || p._id.getTimestamp(),
     })),
     total,
     page: pageNum,
