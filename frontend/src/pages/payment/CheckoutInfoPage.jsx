@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { PATHS } from '../../routes/paths';
 import FormField, { firstMissingRequired } from '../../components/FormField';
+import { VIETNAMESE_BANKS } from '../../data/vietnameseBanks';
 
 const money = (n) => `${Number(n || 0).toLocaleString('vi-VN')} ₫`;
 const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
@@ -31,6 +32,7 @@ export default function CheckoutInfoPage() {
 
   const [data, setData] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [refundBankInfo, setRefundBankInfo] = useState({ bankName: '', accountNo: '', accountHolder: '' });
   const [agree, setAgree] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -53,12 +55,13 @@ export default function CheckoutInfoPage() {
           setData(res);
           return;
         }
-        if (!res.formSchema?.length) {
-          navigate(`/payment/${orderId}`, { replace: true });
-          return;
-        }
         setData(res);
         setAnswers(res.attendeeFormAnswers || {});
+        setRefundBankInfo({
+          bankName: res.refundBankInfo?.bank_name || '',
+          accountNo: res.refundBankInfo?.account_no || '',
+          accountHolder: res.refundBankInfo?.account_holder || '',
+        });
       })
       .catch((err) => {
         if (!alive) return;
@@ -94,9 +97,24 @@ export default function CheckoutInfoPage() {
       showToast('Vui lòng đồng ý với quy định của sự kiện');
       return;
     }
+    if (!refundBankInfo.bankName.trim()) {
+      showToast('Vui lòng nhập tên ngân hàng nhận tiền');
+      return;
+    }
+    if (!/^[0-9]{6,20}$/.test(refundBankInfo.accountNo.trim())) {
+      showToast('Số tài khoản phải gồm 6–20 chữ số');
+      return;
+    }
+    if (!refundBankInfo.accountHolder.trim()) {
+      showToast('Vui lòng nhập tên chủ tài khoản');
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.put(`/booking/orders/${orderId}/checkout-info`, { attendeeFormAnswers: answers });
+      await api.put(`/booking/orders/${orderId}/checkout-info`, {
+        attendeeFormAnswers: answers,
+        refundBankInfo,
+      });
       navigate(`/payment/${orderId}`);
     } catch (err) {
       showToast(err.message || 'Không lưu được câu trả lời');
@@ -165,7 +183,44 @@ export default function CheckoutInfoPage() {
 
       <div className='grid gap-6 lg:grid-cols-[1fr_360px]'>
         <form onSubmit={submit} className='bg-white border border-[#e4e4e7] rounded-2xl p-6 space-y-5'>
-          <h2 className='font-bold'>Câu hỏi của ban tổ chức</h2>
+          <h2 className='font-bold'>Vui lòng điền số tài khoản nhận tiền trong trường hợp sự kiện bị hủy</h2>
+          <p className='text-sm text-[#71717a]'>Thông tin này chỉ được sử dụng để hoàn tiền nếu sự kiện bị hủy.</p>
+          <div className='grid gap-3 sm:grid-cols-2'>
+            <label className='block sm:col-span-2'>
+              <span className='block text-xs font-semibold uppercase tracking-wider text-[#52525b] mb-1.5'>Ngân hàng <span className='text-red-600'>*</span></span>
+              <select
+                required
+                value={refundBankInfo.bankName}
+                onChange={(e) => setRefundBankInfo((p) => ({ ...p, bankName: e.target.value }))}
+                className='w-full border border-[#e4e4e7] rounded-lg px-3 py-2.5 text-sm'
+              >
+                <option value=''>Chọn ngân hàng</option>
+                {VIETNAMESE_BANKS.map((bank) => <option key={bank.code} value={bank.name}>{bank.name}</option>)}
+              </select>
+            </label>
+            <label className='block'>
+              <span className='block text-xs font-semibold uppercase tracking-wider text-[#52525b] mb-1.5'>Số tài khoản <span className='text-red-600'>*</span></span>
+              <input
+                required
+                inputMode='numeric'
+                value={refundBankInfo.accountNo}
+                onChange={(e) => setRefundBankInfo((p) => ({ ...p, accountNo: e.target.value.replace(/\D/g, '') }))}
+                placeholder='6–20 chữ số'
+                className='w-full border border-[#e4e4e7] rounded-lg px-3 py-2.5 text-sm'
+              />
+            </label>
+            <label className='block'>
+              <span className='block text-xs font-semibold uppercase tracking-wider text-[#52525b] mb-1.5'>Tên chủ tài khoản <span className='text-red-600'>*</span></span>
+              <input
+                required
+                value={refundBankInfo.accountHolder}
+                onChange={(e) => setRefundBankInfo((p) => ({ ...p, accountHolder: e.target.value.toUpperCase() }))}
+                placeholder='NGUYEN VAN A'
+                className='w-full border border-[#e4e4e7] rounded-lg px-3 py-2.5 text-sm uppercase'
+              />
+            </label>
+          </div>
+          {schema.length > 0 && <h2 className='font-bold pt-2'>Câu hỏi của ban tổ chức</h2>}
           {schema.map((f) => (
             <div key={f.key}>
               <label htmlFor={`f-${f.key}`} className='block text-xs font-semibold uppercase tracking-wider text-[#52525b] mb-1.5'>
@@ -177,7 +232,7 @@ export default function CheckoutInfoPage() {
 
           <label className='flex items-start gap-2.5 text-sm text-[#52525b] cursor-pointer'>
             <input type='checkbox' className='w-4 h-4 mt-0.5 accent-[#09090b]' checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-            <span>Tôi đã kiểm tra thông tin và đồng ý với quy định của sự kiện. Vé đã mua không hoàn lại, chỉ có thể đăng bán lại.</span>
+            <span>Tôi đã kiểm tra thông tin và đồng ý với quy định của sự kiện.</span>
           </label>
 
           <div className='flex flex-wrap gap-3 pt-2'>

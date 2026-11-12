@@ -31,6 +31,19 @@ function genOrderCode() {
   return `ORD-${d}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 }
 
+function validateRefundBankInfo(info) {
+  if (!info || typeof info !== "object") {
+    throw httpError("Vui lòng điền thông tin tài khoản nhận tiền nếu sự kiện bị huỷ", 400);
+  }
+  const bankName = String(info.bankName || info.bank_name || "").trim();
+  const accountNo = String(info.accountNo || info.account_no || "").trim();
+  const accountHolder = String(info.accountHolder || info.account_holder || "").trim().toUpperCase();
+  if (!bankName) throw httpError("Vui lòng nhập tên ngân hàng nhận tiền", 400);
+  if (!/^[0-9]{6,20}$/.test(accountNo)) throw httpError("Số tài khoản phải gồm 6–20 chữ số", 400);
+  if (!accountHolder) throw httpError("Vui lòng nhập tên chủ tài khoản", 400);
+  return { bank_name: bankName, account_no: accountNo, account_holder: accountHolder };
+}
+
 function signTicket(ticketCode) {
   return crypto.createHmac("sha256", QR_SECRET).update(ticketCode).digest("hex");
 }
@@ -431,7 +444,7 @@ function validateFormAnswers(formSchema, answers) {
  *  - Không trừ kho / khoá ghế: chỉ chuyển các tin bán ACTIVE -> RESERVED (nguyên tử).
  *  - Tiền chuyển vào tài khoản nền tảng; Admin chi trả cho người bán sau khi vé đã được cấp.
  */
-async function createResaleOrderHold({ buyerId, eventId, listingIds, attendeeFormAnswers, voucherCode }) {
+async function createResaleOrderHold({ buyerId, eventId, listingIds, attendeeFormAnswers, refundBankInfo, voucherCode }) {
   if (voucherCode && String(voucherCode).trim()) {
     throw httpError("Vé bán lại không áp dụng mã giảm giá", 400);
   }
@@ -481,6 +494,7 @@ async function createResaleOrderHold({ buyerId, eventId, listingIds, attendeeFor
   }
 
   const cleanAnswers = validateFormAnswers(event.custom_form_schema, attendeeFormAnswers);
+  const cleanRefundBankInfo = validateRefundBankInfo(refundBankInfo);
 
   const orderId = new mongoose.Types.ObjectId();
   const expiresAt = new Date(Date.now() + HOLD_MS);
@@ -534,6 +548,7 @@ async function createResaleOrderHold({ buyerId, eventId, listingIds, attendeeFor
       status: "PENDING_PAYMENT",
       lock_expires_at: expiresAt,
       attendee_form_answers: cleanAnswers,
+      refund_bank_info: cleanRefundBankInfo,
     });
   } catch (err) {
     await ResaleListing.updateMany(
@@ -588,7 +603,7 @@ async function issueResaleTickets(order) {
   return issued;
 }
 
-async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatInvoiceInfo }) {
+async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatInvoiceInfo, refundBankInfo }) {
   const order = await Order.findById(orderId);
   if (!order || order.buyer_id.toString() !== String(buyerId)) throw httpError("Không tìm thấy đơn hàng", 404);
   if (!["PENDING_PAYMENT", "PAID"].includes(order.status)) throw httpError("Không thể cập nhật thông tin đơn hàng ở trạng thái này", 400);
@@ -603,6 +618,9 @@ async function updateCheckoutInfo({ orderId, buyerId, attendeeFormAnswers, vatIn
   }
   if (vatInvoiceInfo !== undefined) {
     order.vat_invoice_info = vatInvoiceInfo;
+  }
+  if (order.status === "PENDING_PAYMENT") {
+    order.refund_bank_info = validateRefundBankInfo(refundBankInfo);
   }
   await order.save();
   return order;
@@ -673,8 +691,7 @@ async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị hu�
           refund_type: "EVENT_BULK_REFUND",
           refund_amount: order.total_amount,
           reason,
-          status: "COMPLETED",
-          processed_at: new Date(),
+          status: "PROCESSING",
         },
       },
       { upsert: true, new: true },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Check, Banknote, X } from 'lucide-react';
+import { Loader2, Check, Banknote, X, QrCode, AlertTriangle } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 
@@ -11,7 +11,52 @@ const TABS = [
   { k: 'SETTLED', t: 'Đã giải ngân' },
   { k: 'REJECTED', t: 'Đã từ chối' },
 ];
-const REFUND_STATUS = { PROCESSING: 'Đang xử lý', COMPLETED: 'Đã hoàn tất', REJECTED: 'Từ chối' };
+const REFUND_STATUS = { PROCESSING: 'Đang xử lý', COMPLETED: 'Đã hoàn tất', REJECTED: 'Lỗi' };
+const BANK_CODES = {
+  vietcombank: 'VCB',
+  vcb: 'VCB',
+  vietinbank: 'CTG',
+  'ngân hàng công thương': 'CTG',
+  bidv: 'BIDV',
+  'techcombank': 'TCB',
+  tcb: 'TCB',
+  mbbank: 'MB',
+  'mb bank': 'MB',
+  mb: 'MB',
+  acb: 'ACB',
+  sacombank: 'STB',
+  'tpbank': 'TPB',
+  'tp bank': 'TPB',
+  vpbank: 'VPB',
+  shb: 'SHB',
+  hdbank: 'HDB',
+  'ocb': 'OCB',
+  seabank: 'SEAB',
+  msb: 'MSB',
+  vib: 'VIB',
+  eximbank: 'EIB',
+  eib: 'EIB',
+  lpbank: 'LPB',
+  lpb: 'LPB',
+  agribank: 'AGRI',
+};
+
+const bankCode = (name) => {
+  const normalized = String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return BANK_CODES[normalized] || null;
+};
+
+const refundQrUrl = (refund) => {
+  const info = refund.refundBankInfo;
+  const code = bankCode(info?.bank_name);
+  if (!code || !info?.account_no) return null;
+  const params = new URLSearchParams({
+    amount: String(Math.round(Number(refund.refundAmount || 0))),
+    addInfo: `REFUND-${refund.id}`,
+    accountName: info.account_holder || '',
+  });
+  return `https://img.vietqr.io/image/${code}-${encodeURIComponent(info.account_no)}-compact2.png?${params.toString()}`;
+};
 
 /** UC42: duyệt & giải ngân đối soát cho nhà tổ chức; UC43: theo dõi các khoản hoàn tiền do huỷ sự kiện. */
 export default function AdminPayoutsPage() {
@@ -21,6 +66,7 @@ export default function AdminPayoutsPage() {
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [qrRefund, setQrRefund] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +88,29 @@ export default function AdminPayoutsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!qrRefund) return undefined;
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const result = await api.get(`/admin/refunds/${qrRefund.id}`);
+        if (active && result.refund?.status === 'COMPLETED') {
+          setQrRefund(null);
+          showToast('SePay đã xác nhận chuyển khoản hoàn tiền');
+          load();
+        }
+      } catch {
+        // The manual confirmation button remains available if polling is interrupted.
+      }
+    };
+    checkStatus();
+    const timer = setInterval(checkStatus, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [load, qrRefund, showToast]);
 
   const reject = async (p) => {
     const reason = window.prompt(`Lý do từ chối yêu cầu đối soát của "${p.event.title}" (nhà tổ chức sẽ thấy):`);
@@ -74,6 +143,46 @@ export default function AdminPayoutsPage() {
     }
   };
 
+  const completeRefund = async (refund) => {
+    setBusy(`refund:${refund.id}`);
+    try {
+      await api.put(`/admin/refunds/${refund.id}/complete`, {});
+      setQrRefund(null);
+      showToast('Đã ghi nhận chuyển khoản hoàn tiền');
+      load();
+    } catch (err) {
+      showToast(err.message || 'Không thể ghi nhận hoàn tiền');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const rejectRefund = async (refund) => {
+    const reason = window.prompt(`Nhập lý do báo lỗi cho ${refund.orderCode}:`, 'Thông tin tài khoản nhận tiền không hợp lệ');
+    if (reason === null) return;
+    if (!reason.trim()) return showToast('Vui lòng nhập lý do báo lỗi');
+    setBusy(`reject-refund:${refund.id}`);
+    try {
+      await api.put(`/admin/refunds/${refund.id}/reject`, { reason: reason.trim() });
+      setQrRefund(null);
+      showToast('Đã đánh dấu yêu cầu hoàn tiền bị lỗi');
+      load();
+    } catch (err) {
+      showToast(err.message || 'Không thể báo lỗi yêu cầu hoàn tiền');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const showRefundQr = (refund) => {
+    const url = refundQrUrl(refund);
+    if (!url) {
+      showToast(`Chưa nhận diện được ngân hàng "${refund.refundBankInfo?.bank_name || ''}". Vui lòng dùng tên ngân hàng chuẩn VietQR.`);
+      return;
+    }
+    setQrRefund({ ...refund, qrUrl: url });
+  };
+
   return (
     <div className='space-y-6'>
       <div>
@@ -101,15 +210,17 @@ export default function AdminPayoutsPage() {
                 <th className='p-4'>Khách hàng</th>
                 <th>Sự kiện / Đơn</th>
                 <th>Số tiền</th>
+                <th>Tài khoản nhận</th>
                 <th>Lý do</th>
                 <th>Trạng thái</th>
+                <th></th>
                 <th>Thời gian</th>
               </tr>
             </thead>
             <tbody>
               {refunds.length === 0 && (
                 <tr>
-                  <td colSpan={6} className='p-8 text-center text-[#71717a]'>Chưa có khoản hoàn tiền nào.</td>
+                  <td colSpan={8} className='p-8 text-center text-[#71717a]'>Chưa có khoản hoàn tiền nào.</td>
                 </tr>
               )}
               {refunds.map((r) => (
@@ -123,8 +234,29 @@ export default function AdminPayoutsPage() {
                     <div className='font-mono text-xs text-[#71717a]'>{r.orderCode}</div>
                   </td>
                   <td className='font-semibold'>{money(r.refundAmount)}</td>
+                  <td className='text-xs'>
+                    {r.refundBankInfo ? (
+                      <>
+                        <div className='font-semibold'>{r.refundBankInfo.bank_name}</div>
+                        <div className='font-mono'>{r.refundBankInfo.account_no}</div>
+                        <div className='uppercase'>{r.refundBankInfo.account_holder}</div>
+                      </>
+                    ) : 'Chưa có'}
+                  </td>
                   <td className='text-xs max-w-xs'>{r.reason}</td>
                   <td>{REFUND_STATUS[r.status] || r.status}</td>
+                  <td>
+                    {r.status === 'PROCESSING' && (
+                      <button type='button' className='tb-btn tb-btn-outline tb-btn-sm' onClick={() => showRefundQr(r)}>
+                        <QrCode size={13} /> Tạo QR
+                      </button>
+                    )}
+                    {r.status === 'PROCESSING' && (
+                      <button type='button' className='tb-btn tb-btn-outline tb-btn-sm text-red-700' disabled={busy === `reject-refund:${r.id}`} onClick={() => rejectRefund(r)}>
+                        <AlertTriangle size={13} /> Báo lỗi
+                      </button>
+                    )}
+                  </td>
                   <td className='text-xs text-[#52525b]'>{fmt(r.createdAt)}</td>
                 </tr>
               ))}
@@ -189,6 +321,35 @@ export default function AdminPayoutsPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+      {qrRefund && (
+        <div className='fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4' onClick={() => setQrRefund(null)}>
+          <div className='bg-white rounded-2xl p-6 w-full max-w-sm space-y-4' onClick={(e) => e.stopPropagation()}>
+            <div className='flex items-center justify-between'>
+              <h2 className='font-bold'>QR chuyển tiền hoàn</h2>
+              <button type='button' onClick={() => setQrRefund(null)} className='p-1 text-[#71717a] hover:text-[#09090b]' aria-label='Đóng'>
+                <X size={18} />
+              </button>
+            </div>
+            <img src={qrRefund.qrUrl} alt='Mã QR chuyển khoản hoàn tiền' className='w-64 h-64 mx-auto' />
+            <div className='text-sm space-y-1'>
+              <div><strong>Ngân hàng:</strong> {qrRefund.refundBankInfo.bank_name}</div>
+              <div><strong>Số tài khoản:</strong> {qrRefund.refundBankInfo.account_no}</div>
+              <div><strong>Chủ tài khoản:</strong> {qrRefund.refundBankInfo.account_holder}</div>
+              <div><strong>Số tiền:</strong> {money(qrRefund.refundAmount)}</div>
+              <div><strong>Nội dung:</strong> REFUND-{qrRefund.id}</div>
+            </div>
+            <p className='text-xs text-[#71717a]'>Mở ứng dụng ngân hàng của EventTick và quét mã này. Kiểm tra lại tên người nhận và số tiền trước khi xác nhận.</p>
+            <div className='flex gap-2'>
+              <button type='button' className='tb-btn tb-btn-solid flex-1' disabled={busy === `refund:${qrRefund.id}`} onClick={() => completeRefund(qrRefund)}>
+                <Banknote size={14} /> Đã chuyển khoản
+              </button>
+              <button type='button' className='tb-btn tb-btn-outline text-red-700' disabled={busy === `reject-refund:${qrRefund.id}`} onClick={() => rejectRefund(qrRefund)}>
+                <AlertTriangle size={14} /> Báo lỗi
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
