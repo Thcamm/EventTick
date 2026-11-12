@@ -240,7 +240,11 @@ export default function MainLayout() {
           <div className='header-actions'>
             <Link
               to={
-                !user ? PATHS.LOGIN : user.role === 'ORGANIZER' || user.role === 'ADMIN' ? PATHS.ORGANIZER_CREATE_EVENT : PATHS.ORGANIZER_KYC
+                !user
+                  ? PATHS.LOGIN
+                  : user.role === 'ORGANIZER' || user.role === 'ADMIN'
+                    ? PATHS.ORGANIZER_CREATE_EVENT
+                    : PATHS.ORGANIZER_KYC
               }
               className='tb-btn tb-btn-outline tb-btn-sm header-create-btn'>
               <CalendarPlus size={15} />
@@ -254,7 +258,7 @@ export default function MainLayout() {
                   onClick={() => setUserDropdownOpen((prev) => !prev)}
                   className='tb-btn tb-btn-solid tb-btn-sm flex items-center gap-2'>
                   <User size={15} />
-                  <span className='max-w-25 truncate'>{user.username || user.full_name}</span>
+                  <span className='max-w-25 truncate'>{user.username || user.full_name || user.name}</span>
                   {user.role !== 'CUSTOMER' && (
                     <span className='text-[10px] bg-white text-black px-1.5 py-0.5 rounded font-bold'>{user.role}</span>
                   )}
@@ -263,9 +267,16 @@ export default function MainLayout() {
                 {userDropdownOpen && (
                   <div className='absolute right-0 mt-2 w-48 bg-white border border-[#e4e4e7] rounded-xl shadow-lg py-1.5 z-50 text-xs'>
                     <div className='px-3 py-2 border-b border-[#f4f4f6]'>
-                      <div className='font-bold text-[#09090b] truncate'>{user.full_name || user.username}</div>
+                      <div className='font-bold text-[#09090b] truncate'>
+                        {user.full_name || user.username || user.name}
+                      </div>
                       <div className='text-[#71717a] text-[11px]'>
-                        {{ CUSTOMER: 'Khách hàng', ORGANIZER: 'Nhà tổ chức', STAFF: 'Nhân viên soát vé', ADMIN: 'Quản trị viên' }[user.role] || user.role}
+                        {{
+                          CUSTOMER: 'Khách hàng',
+                          ORGANIZER: 'Nhà tổ chức',
+                          STAFF: 'Nhân viên soát vé',
+                          ADMIN: 'Quản trị viên',
+                        }[user.role] || user.role}
                       </div>
                     </div>
                     {user.role !== 'CUSTOMER' && (
