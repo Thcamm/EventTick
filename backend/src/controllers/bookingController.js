@@ -163,6 +163,7 @@ exports.myTickets = async (req, res) => {
             resalePrice: l.resale_price,
             reservedUntil: reservedNow ? l.reserved_until : undefined,
             payoutStatus: l.payout_status,
+            cancelRequested: Boolean(l.cancel_requested),
           };
         }
 
@@ -299,17 +300,17 @@ exports.checkInTicket = async (req, res) => {
     if (trimmed.startsWith("{")) {
       try {
         const parsed = JSON.parse(trimmed);
-        code = String(parsed.ticketCode || parsed.code || "").trim().toUpperCase();
+        code = String(parsed.ticketCode || parsed.code || "").replace(/^[#\s]+/, "").trim().toUpperCase();
         if (!providedHash) providedHash = String(parsed.qrHash || parsed.signature || "").trim();
       } catch {
         return res.status(400).json({ success: false, message: "Dữ liệu QR không hợp lệ" });
       }
     } else if (/[.|:]/.test(trimmed)) {
       const [cPart, hPart] = trimmed.split(/[.|:]/) ;
-      code = String(cPart || "").trim().toUpperCase();
+      code = String(cPart || "").replace(/^[#\s]+/, "").trim().toUpperCase();
       if (!providedHash && hPart) providedHash = String(hPart).trim();
     } else {
-      code = trimmed.toUpperCase();
+      code = trimmed.replace(/^[#\s]+/, "").trim().toUpperCase();
     }
 
     if (!code) return res.status(400).json({ success: false, message: "Thiếu mã vé QR" });
