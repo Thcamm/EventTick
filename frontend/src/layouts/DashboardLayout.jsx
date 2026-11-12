@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { PATHS } from '../routes/paths';
+import NotificationBell from '../components/NotificationBell';
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
@@ -187,6 +188,7 @@ export default function DashboardLayout() {
             </div>
           </div>
           <div className='flex items-center gap-3 text-xs text-[#71717a] shrink-0'>
+            <NotificationBell />
             <span className='hidden sm:inline'>
               Tài khoản: <strong className='text-[#09090b]'>{user?.username}</strong>
             </span>

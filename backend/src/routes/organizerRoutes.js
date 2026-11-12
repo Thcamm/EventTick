@@ -14,6 +14,7 @@ router.get("/dashboard", ev.getDashboard);
 // UC22, UC23: sự kiện
 router.get("/events", ev.list);
 router.get("/events/:id", ev.detail);
+router.get("/events/:id/history", ev.history);
 router.put("/events/:id", ev.update);
 router.put("/events/:id/images", upload.any(), ev.images);
 router.put("/events/:id/legal-doc", upload.single("document"), ev.legalDoc);

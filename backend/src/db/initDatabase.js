@@ -147,6 +147,7 @@ const collections = {
       signed_pdf_url: strN(),
       signer_ip: strN(45),
       signed_at: dateN,
+      rejection_reason: strN(1000),
       status: enumOf("WAITING_SIGN", "SIGNED", "REJECTED"),
     }),
     indexes: [[{ event_id: 1 }, { unique: true }], [{ organizer_id: 1 }]],
@@ -380,12 +381,28 @@ const collections = {
         platform_commission_amt: nonNeg,
         net_payout_amount: num,
         bank_transfer_receipt_url: strN(),
-        status: enumOf("REQUESTED", "APPROVED", "SETTLED"),
+        status: enumOf("REQUESTED", "APPROVED", "SETTLED", "REJECTED"),
+        rejection_reason: strN(1000),
+        rejected_by_admin: oidN,
         settled_by_admin: oidN,
         settled_at: dateN,
       }
     ),
     indexes: [[{ event_id: 1 }, { unique: true }], [{ organizer_id: 1 }], [{ status: 1 }]],
+  },
+
+  // Thông báo trong ứng dụng (chuông ở Dashboard)
+  notifications: {
+    validator: schema(["user_id", "type", "title", "created_at"], {
+      user_id: oid,
+      type: str(50),
+      title: str(200),
+      body: strN(1000),
+      link: strN(300),
+      read_at: dateN,
+      created_at: date,
+    }),
+    indexes: [[{ user_id: 1, created_at: -1 }], [{ user_id: 1, read_at: 1 }]],
   },
 };
 

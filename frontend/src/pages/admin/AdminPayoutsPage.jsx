@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Check, Banknote } from 'lucide-react';
+import { Loader2, Check, Banknote, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 
@@ -8,7 +8,8 @@ const fmt = (d) => (d ? new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho
 const TABS = [
   { k: 'REQUESTED', t: 'Chờ duyệt' },
   { k: 'APPROVED', t: 'Chờ chuyển khoản' },
-  { k: 'PAID', t: 'Đã giải ngân' },
+  { k: 'SETTLED', t: 'Đã giải ngân' },
+  { k: 'REJECTED', t: 'Đã từ chối' },
 ];
 const REFUND_STATUS = { PROCESSING: 'Đang xử lý', COMPLETED: 'Đã hoàn tất', REJECTED: 'Từ chối' };
 
@@ -41,6 +42,22 @@ export default function AdminPayoutsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const reject = async (p) => {
+    const reason = window.prompt(`Lý do từ chối yêu cầu đối soát của "${p.event.title}" (nhà tổ chức sẽ thấy):`);
+    if (reason === null) return;
+    if (!reason.trim()) return showToast('Vui lòng nhập lý do từ chối');
+    setBusy(`reject:${p.id}`);
+    try {
+      await api.put(`/admin/payouts/${p.id}/reject`, { reason: reason.trim() });
+      showToast('Đã từ chối, nhà tổ chức có thể gửi lại');
+      load();
+    } catch (err) {
+      showToast(err.message || 'Không từ chối được');
+    } finally {
+      setBusy('');
+    }
+  };
 
   const act = async (p, action) => {
     const msg = action === 'approve' ? `Duyệt đối soát ${money(p.netPayoutAmount)} cho "${p.event.title}"?` : `Xác nhận ĐÃ CHUYỂN KHOẢN ${money(p.netPayoutAmount)} cho ${p.organizer.name}? Hệ thống không tự chuyển tiền.`;
@@ -128,6 +145,11 @@ export default function AdminPayoutsPage() {
                   </p>
                 </div>
                 <div className='flex gap-2'>
+                  {['REQUESTED', 'APPROVED'].includes(p.status) && (
+                    <button type='button' className='tb-btn tb-btn-outline tb-btn-sm text-red-700' disabled={busy === `reject:${p.id}`} onClick={() => reject(p)}>
+                      <X size={13} /> Từ chối
+                    </button>
+                  )}
                   {p.status === 'REQUESTED' && (
                     <button type='button' className='tb-btn tb-btn-solid tb-btn-sm' disabled={busy === `approve:${p.id}`} onClick={() => act(p, 'approve')}>
                       <Check size={13} /> Duyệt
@@ -156,6 +178,9 @@ export default function AdminPayoutsPage() {
                 <p className='text-xs text-[#52525b]'>
                   Tài khoản nhận: <strong>{typeof p.organizer.bankAccount === 'string' ? p.organizer.bankAccount : JSON.stringify(p.organizer.bankAccount)}</strong>
                 </p>
+              )}
+              {p.status === 'REJECTED' && p.rejectionReason && (
+                <p className='text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2'>Đã từ chối: {p.rejectionReason}</p>
               )}
               {p.settledAt && (
                 <p className='text-xs text-[#52525b]'>

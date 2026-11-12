@@ -140,10 +140,12 @@ export default function OrganizerContractsPage() {
   };
 
   const reject = async () => {
-    if (!window.confirm('Từ chối ký hợp đồng? Sự kiện sẽ trở về bản nháp.')) return;
+    const reason = window.prompt('Lý do không đồng ý ký (ví dụ mức hoa hồng bạn mong muốn). Admin sẽ thấy lý do này để chỉnh hợp đồng:');
+    if (reason === null) return;
+    if (!reason.trim()) return showToast('Vui lòng nhập lý do từ chối ký');
     try {
-      await api.put(`/organizer/contracts/${active.id}/reject`, {});
-      showToast('Đã từ chối ký hợp đồng');
+      await api.put(`/organizer/contracts/${active.id}/reject`, { reason: reason.trim() });
+      showToast('Đã gửi lý do cho Admin, sự kiện quay lại hàng chờ duyệt');
       setActive(null);
       await load();
     } catch (err) {
@@ -204,6 +206,7 @@ export default function OrganizerContractsPage() {
                           <FileSignature size={14} /> {opening === c.id ? 'Đang mở...' : 'Xem & ký'}
                         </button>
                       )}
+                      {c.status === 'REJECTED' && c.rejectionReason && <span className='text-xs text-[#71717a] block max-w-xs ml-auto'>Lý do bạn từ chối: {c.rejectionReason}</span>}
                       {c.status === 'SIGNED' && (
                         <button type='button' className='tb-btn tb-btn-outline tb-btn-sm' onClick={() => downloadPdf(c)}>
                           <Download size={14} /> Tải PDF

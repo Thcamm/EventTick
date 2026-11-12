@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, FileText, Check, X, Calendar, MapPin, Star, Flame, Sparkles, Ban, Upload } from 'lucide-react';
+import { Loader2, FileText, Check, X, Calendar, MapPin, Star, Flame, Sparkles, Ban, Upload, Eye, ExternalLink } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { inputCls } from '../../components/FormField';
@@ -17,6 +17,114 @@ const TABS = [
 const label = 'block text-xs font-semibold uppercase tracking-wider text-[#52525b] mb-1.5';
 const CONTRACT_STATUS = { WAITING_SIGN: 'Chờ ký', SIGNED: 'Đã ký', REJECTED: 'Đã từ chối' };
 
+const FIELD_TYPE = { text: 'Văn bản', textarea: 'Đoạn văn', select: 'Chọn một', checkbox: 'Hộp kiểm', number: 'Số' };
+
+/** Chi tiết đầy đủ để Admin duyệt: không phải mở trang công khai (sự kiện chưa duyệt không hiện công khai). */
+function EventDetail({ d, onClose }) {
+  const clean = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return (
+    <div className='space-y-5'>
+      <div className='flex items-start justify-between gap-3'>
+        <div>
+          <h2 className='text-lg font-bold'>{d.title}</h2>
+          <p className='text-xs text-[#71717a] mt-0.5'>
+            {d.categoryName || '—'} · {d.venueName}, {d.city} · {fmt(d.startTime)} – {fmt(d.endTime)}
+          </p>
+        </div>
+        <button type='button' onClick={onClose} className='text-[#71717a] hover:text-[#09090b]' aria-label='Đóng'>
+          <X size={18} />
+        </button>
+      </div>
+
+      {d.bannerUrl && <img src={d.bannerUrl} alt='' className='w-full max-h-56 object-cover rounded-xl bg-[#f4f4f6]' />}
+
+      <section className='space-y-1'>
+        <h3 className={label}>Nhà tổ chức</h3>
+        <p className='text-sm'>
+          {d.organizer?.organizationName || d.organizer?.name} ({d.organizer?.businessType === 'ENTERPRISE' ? 'Doanh nghiệp' : 'Cá nhân'}) · MST {d.organizer?.taxCode || '—'}
+        </p>
+        <p className='text-xs text-[#71717a]'>{d.organizer?.email} {d.organizer?.phone && `· ${d.organizer.phone}`}</p>
+      </section>
+
+      <section className='space-y-1'>
+        <h3 className={label}>Mô tả</h3>
+        <p className='text-sm text-[#27272a] whitespace-pre-wrap max-h-40 overflow-y-auto'>{clean(d.description) || '—'}</p>
+      </section>
+
+      <section className='space-y-2'>
+        <h3 className={label}>Suất diễn & hạng vé</h3>
+        {d.sessions.map((s) => (
+          <div key={s._id} className='border border-[#e4e4e7] rounded-xl p-3'>
+            <div className='text-sm font-semibold'>{s.name} · <span className='font-normal text-[#52525b]'>{fmt(s.startTime)} – {fmt(s.endTime)}</span></div>
+            <ul className='mt-1.5 text-xs text-[#52525b] grid gap-1 sm:grid-cols-2'>
+              {s.tiers.map((t) => (
+                <li key={t._id}>
+                  <strong>{t.name}</strong> · {money(t.price)} · {t.totalQuantity} vé · {t.zoneType === 'SEATED' ? 'ghế đánh số' : 'vé đứng'} · {t.minPerOrder}–{t.maxPerOrder} vé/đơn
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+
+      <section className='space-y-1'>
+        <h3 className={label}>Sơ đồ chỗ ngồi</h3>
+        {d.seatmap?.exists ? (
+          <ul className='text-xs text-[#52525b] grid gap-1 sm:grid-cols-2'>
+            {d.seatmap.sections.map((s) => (
+              <li key={s.name}>
+                <strong>{s.name}</strong> · {s.type === 'GA' ? 'chỗ đứng' : 'ghế'} · {s.capacity} · hạng {s.tierName}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className='text-xs text-[#71717a]'>Chưa có sơ đồ (khách chọn hạng vé và số lượng).</p>
+        )}
+      </section>
+
+      <section className='space-y-1'>
+        <h3 className={label}>Cấu hình khác</h3>
+        <p className='text-xs text-[#52525b]'>
+          Bán lại vé: {d.allowResale ? `cho phép, tối đa +${d.maxResaleMarkupPct}%` : 'không'} · Giấy phép: {d.hasLegalDoc ? 'đã nộp' : 'chưa nộp'}
+        </p>
+        {d.customFormSchema?.length > 0 && (
+          <ul className='text-xs text-[#52525b] list-disc pl-5'>
+            {d.customFormSchema.map((f) => (
+              <li key={f.key}>{f.label} ({FIELD_TYPE[f.type] || f.type}{f.required ? ', bắt buộc' : ''})</li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {d.contract?.rejectionReason && (
+        <p className='text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2'>
+          Nhà tổ chức từ chối ký (hoa hồng đề xuất {d.contract.commissionRatePct}%): {d.contract.rejectionReason}
+        </p>
+      )}
+
+      {d.statusHistory?.length > 0 && (
+        <section className='space-y-1'>
+          <h3 className={label}>Lịch sử trạng thái</h3>
+          <ul className='text-xs text-[#52525b] space-y-0.5'>
+            {[...d.statusHistory].reverse().map((h, i) => (
+              <li key={i}>
+                {fmt(h.at)} · <strong>{h.status}</strong>{h.note ? ` · ${h.note}` : ''}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div className='flex flex-wrap gap-3'>
+        <a className='tb-btn tb-btn-outline tb-btn-sm' href={`/events/${d._id}`} target='_blank' rel='noopener noreferrer'>
+          <ExternalLink size={13} /> Xem trước trang công khai
+        </a>
+        <button type='button' className='tb-btn tb-btn-outline tb-btn-sm' onClick={onClose}>Đóng</button>
+      </div>
+    </div>
+  );
+}
+
 /** UC39, UC40, UC41, UC43, UC24: duyệt sự kiện + hoa hồng, hợp đồng, nổi bật trang chủ, dựng sơ đồ ghế, hoàn tiền khi huỷ. */
 export default function AdminEventsPage() {
   const { showToast } = useToast();
@@ -29,6 +137,7 @@ export default function AdminEventsPage() {
   const [form, setForm] = useState({ rate: '', terms: '', reason: '' });
   const [files, setFiles] = useState({ svg: null, xlsx: null });
   const [seatResult, setSeatResult] = useState(null);
+  const [detail, setDetail] = useState(null); // { loading, data } panel chi tiết khi duyệt
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,7 +166,7 @@ export default function AdminEventsPage() {
     setFiles({ svg: null, xlsx: null });
   };
   const openDlg = (type, target) => {
-    setForm({ rate: target.defaultCommissionPct ?? target.commissionRatePct ?? '10', terms: '', reason: '' });
+    setForm({ rate: target.lastCommissionRatePct ?? target.defaultCommissionPct ?? target.commissionRatePct ?? '10', terms: '', reason: '' });
     setSeatResult(null);
     setDlg({ type, target });
   };
@@ -73,6 +182,17 @@ export default function AdminEventsPage() {
       showToast(err.message || 'Không thực hiện được');
     } finally {
       setBusy('');
+    }
+  };
+
+  const openDetail = async (e) => {
+    setDetail({ loading: true, data: null });
+    try {
+      const r = await api.get(`/admin/events/${e._id}`);
+      setDetail({ loading: false, data: r.event });
+    } catch (err) {
+      setDetail(null);
+      showToast(err.message || 'Không tải được chi tiết sự kiện');
     }
   };
 
@@ -201,9 +321,12 @@ export default function AdminEventsPage() {
                   <span>Từ {money(e.lowestPrice)}</span>
                 </div>
                 <div className='text-xs text-[#71717a]'>Nhà tổ chức: {e.organizerName || '—'} {e.organizerEmail && `(${e.organizerEmail})`}</div>
-                {e.rejectionReason && <p className='text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2'>Đã từ chối: {e.rejectionReason}</p>}
+                {e.rejectionReason && <p className='text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2'>{tab === 'PENDING' && e.contractRejectionReason ? 'Nhà tổ chức không đồng ý hợp đồng' : 'Đã từ chối'}: {e.rejectionReason}{e.lastCommissionRatePct != null && tab === 'PENDING' ? ` (hoa hồng đã đề xuất: ${e.lastCommissionRatePct}%)` : ''}</p>}
 
                 <div className='flex flex-wrap gap-2 pt-1'>
+                  <button type='button' className='tb-btn tb-btn-outline tb-btn-sm' onClick={() => openDetail(e)}>
+                    <Eye size={13} /> Xem chi tiết
+                  </button>
                   <button type='button' className='tb-btn tb-btn-outline tb-btn-sm' disabled={!e.hasLegalDoc} onClick={() => openLegal(e)} title={e.hasLegalDoc ? '' : 'Nhà tổ chức chưa nộp giấy phép'}>
                     <FileText size={13} /> Giấy phép
                   </button>
@@ -244,6 +367,20 @@ export default function AdminEventsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {detail && (
+        <div className='fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50' onClick={() => setDetail(null)}>
+          <div className='bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-6 space-y-5' onClick={(e) => e.stopPropagation()}>
+            {detail.loading || !detail.data ? (
+              <div className='text-[#71717a] flex items-center gap-2'>
+                <Loader2 size={16} className='animate-spin' /> Đang tải...
+              </div>
+            ) : (
+              <EventDetail d={detail.data} onClose={() => setDetail(null)} />
+            )}
+          </div>
         </div>
       )}
 

@@ -173,9 +173,14 @@ async function runImport(req, res, { ownerOnly = false } = {}) {
     ...(ownerOnly ? { organizer_id: req.user.id } : {}),
   });
   if (!event) throw httpError("Không tìm thấy sự kiện", 404);
-  // Organizer chỉ tự dựng khi sự kiện còn bản nháp / chờ duyệt (đã duyệt thì sơ đồ nằm trong hợp đồng, cần Admin)
-  if (ownerOnly && !["DRAFT", "PENDING"].includes(event.status)) {
-    throw fail(`Sự kiện đã ${event.status === "PUBLISHED" ? "mở bán" : "được duyệt"}, không tự dựng lại sơ đồ được. Hãy liên hệ Admin.`, null, 409);
+  // Organizer tự dựng được khi DRAFT / PENDING / APPROVED. Khi PUBLISHED chỉ được nếu chưa có vé nào đã bán hoặc đang giữ
+  // (kiểm tra chi tiết theo từng hạng vé ở bước 4 bên dưới và ở đây theo toàn sự kiện).
+  if (ownerOnly && !["DRAFT", "PENDING", "APPROVED", "PUBLISHED"].includes(event.status)) {
+    throw fail(`Không dựng sơ đồ được khi sự kiện ở trạng thái ${event.status}`, null, 409);
+  }
+  if (ownerOnly && event.status === "PUBLISHED") {
+    const sold = await TicketTier.countDocuments({ event_id: event._id, $expr: { $lt: ["$available_quantity", "$total_quantity"] } });
+    if (sold > 0) throw fail("Sự kiện đã bán hoặc đang giữ vé nên không tự dựng lại sơ đồ được. Hãy liên hệ Admin.", null, 409);
   }
   if (!IMPORTABLE.includes(event.status)) throw fail(`Không dựng sơ đồ được khi sự kiện ở trạng thái ${event.status}`, null, 409);
 
@@ -318,7 +323,7 @@ exports.templateSvg = (req, res) => {
 exports.publicMap = ah(async (req, res) => {
   const session = await EventSession.findById(validId(req.params.sessionId, "ID suất diễn"));
   const event = session && (await Event.findById(session.event_id).select("status"));
-  if (!session || !event || !["APPROVED", "PUBLISHED"].includes(event.status)) throw httpError("Không tìm thấy suất diễn", 404);
+  if (!session || !event || event.status !== "PUBLISHED") throw httpError("Không tìm thấy suất diễn", 404);
 
   const layout = await SeatmapLayout.findOne({ event_id: event._id });
   if (!layout) return res.json({ success: true, hasMap: false });

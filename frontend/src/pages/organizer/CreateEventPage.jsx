@@ -531,7 +531,7 @@ export default function CreateEventPage() {
           <div className='space-y-4'>
             <h2 className='font-bold'>Sơ đồ chỗ ngồi / chỗ đứng</h2>
             {editing ? (
-              <SeatmapBuilder eventId={id} canEdit={['DRAFT', 'PENDING'].includes(status)} />
+              <SeatmapBuilder eventId={id} canEdit={['DRAFT', 'PENDING', 'APPROVED', 'PUBLISHED'].includes(status)} />
             ) : (
               <div className='text-sm text-[#52525b] space-y-2'>
                 <p>

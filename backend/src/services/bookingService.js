@@ -77,7 +77,7 @@ async function createOrderHold({
   if (session.status !== "SCHEDULED" || session.end_time < new Date()) {
     throw httpError("Suất diễn đã kết thúc hoặc bị huỷ", 400);
   }
-  if (!["APPROVED", "PUBLISHED"].includes(event.status)) throw httpError("Sự kiện chưa mở bán", 400);
+  if (event.status !== "PUBLISHED") throw httpError("Sự kiện chưa mở bán", 400);
   if (!Array.isArray(items) || items.length === 0) throw httpError("Đơn hàng phải có ít nhất 1 vé", 400);
 
   const orderId = new mongoose.Types.ObjectId();
@@ -442,7 +442,7 @@ async function createResaleOrderHold({ buyerId, eventId, listingIds, attendeeFor
 
   const event = await Event.findById(eventId);
   if (!event) throw httpError("Không tìm thấy sự kiện", 404);
-  if (!["APPROVED", "PUBLISHED"].includes(event.status)) throw httpError("Sự kiện không còn mở bán", 400);
+  if (event.status !== "PUBLISHED") throw httpError("Sự kiện không còn mở bán", 400);
 
   const listings = await ResaleListing.find({ _id: { $in: ids } }).populate("ticket_id");
   if (listings.length !== ids.length) throw httpError("Có vé không còn tồn tại", 404);
@@ -618,6 +618,7 @@ async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị hu�
 
   e.status = "CANCELLED";
   await e.save();
+  await require("../utils/eventHistory").logEventStatus(e._id, "CANCELLED", { note: `Huỷ & hoàn tiền hàng loạt: ${reason}` });
 
   await EventSession.updateMany({ event_id: e._id }, { status: "CANCELLED" });
   await EContract.updateOne({ event_id: e._id, status: "WAITING_SIGN" }, { status: "REJECTED" });
@@ -706,14 +707,39 @@ async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị hu�
   };
 }
 
-/** Job nền: mỗi 30 giây hoàn kho + trả ghế các đơn quá hạn. */
+/**
+ * Chuyển sự kiện PUBLISHED sang ENDED khi suất diễn cuối đã kết thúc (end_time của sự kiện = suất muộn nhất).
+ * Cập nhật nguyên tử theo điều kiện status để không đè lên sự kiện vừa bị huỷ.
+ */
+async function endFinishedEvents() {
+  const { logEventStatus } = require("../utils/eventHistory");
+  const due = await Event.find({ status: "PUBLISHED", end_time: { $lt: new Date() } }).select("_id");
+  let count = 0;
+  for (const e of due) {
+    const r = await Event.updateOne({ _id: e._id, status: "PUBLISHED" }, { status: "ENDED" });
+    if (r.modifiedCount) {
+      count++;
+      await EventSession.updateMany({ event_id: e._id, status: "SCHEDULED" }, { status: "ENDED" });
+      await logEventStatus(e._id, "ENDED", { note: "Tự động: suất diễn cuối đã kết thúc" });
+    }
+  }
+  return count;
+}
+
+/** Job nền: mỗi 30 giây hoàn kho + trả ghế các đơn quá hạn; mỗi ~5 phút chuyển sự kiện đã diễn xong sang ENDED. */
 let timer = null;
 function startExpirationJob(intervalMs = 30_000) {
   if (timer) return;
+  let tick = 0;
   timer = setInterval(() => {
     releaseExpiredOrders()
       .then((n) => n && console.log(`[OrderExpirationJob] Đã nhả ${n} đơn quá hạn`))
       .catch((e) => console.error("[OrderExpirationJob] lỗi:", e.message));
+    if (tick++ % 10 === 0) {
+      endFinishedEvents()
+        .then((n) => n && console.log(`[EventEndJob] Đã chuyển ${n} sự kiện sang ENDED`))
+        .catch((e) => console.error("[EventEndJob] lỗi:", e.message));
+    }
   }, intervalMs);
   timer.unref?.();
 }
@@ -726,6 +752,7 @@ module.exports = {
   updateCheckoutInfo,
   bulkRefundAndCancelEvent,
   releaseExpiredOrders,
+  endFinishedEvents,
   cancelPendingOrder,
   cancelPendingOrdersOfEvent,
   confirmPaymentAndIssueTickets,

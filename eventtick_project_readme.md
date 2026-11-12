@@ -266,6 +266,90 @@ EventTick/
    * **Nếu thanh toán thành công trong 10 phút:** Webhook SePay (xác thực API Key) $\rightarrow$ chuyển `Order` từ `PENDING_PAYMENT` sang `PAID` bằng cập nhật nguyên tử (một đơn chỉ xác nhận một lần), ghi `Payment = SUCCESS` (unique `transaction_ref` và `order_id` chống trùng), đặt `Seat = SOLD`, `insertMany` danh sách `Ticket` kèm chữ ký `qr_hash_signature` (HMAC-SHA256). Kho vé và lượt voucher đã được trừ từ lúc giữ chỗ.
    * **Nếu quá hạn 10 phút không thanh toán:** Job nền trong `bookingService` (mỗi 30 giây) tự động chuyển `Order = EXPIRED`, mở khóa ghế về `AVAILABLE` và hoàn trả số lượng tồn kho về `TicketTier`.
 
+### 4.3. Luồng Organizer ↔ Admin: nhược điểm đã rà soát và cách đã khắc phục (12/11/2026)
+
+> **Trạng thái:** cả 3 giai đoạn ở mục C **đã làm xong và kiểm thử bằng API thật** (xem mục D). Mục A và B bên dưới mô tả vấn đề **trước khi sửa**, giữ lại để đối chiếu.
+
+Khung luồng ở 4.1 là hợp lý (KYC trước, duyệt nội dung rồi mới sinh hợp đồng, ký xong mới mở bán; mọi chuyển trạng thái đều nguyên tử). Điểm yếu nằm ở chỗ **hai bên không trao đổi được với nhau trong hệ thống**, mỗi lần bất đồng phải quay lại từ đầu, và Admin thiếu dữ liệu để ra quyết định.
+
+**Sơ đồ trạng thái hiện tại:**
+
+```
+KYC:     CUSTOMER --nộp--> PENDING --Admin duyệt--> VERIFIED (role → ORGANIZER)
+                                   --Admin từ chối--> REJECTED --nộp lại--> PENDING
+Event:   DRAFT --submit--> PENDING --Admin approve (+% hoa hồng)--> APPROVED + Contract WAITING_SIGN
+         APPROVED --Organizer ký--> PUBLISHED
+         PENDING  --Admin reject--> DRAFT (kèm lý do)
+         APPROVED --Organizer từ chối ký--> DRAFT (mất lý do, phải submit lại từ đầu)
+Payout:  Organizer request → REQUESTED --Admin approve--> APPROVED --Admin settle--> SETTLED
+```
+
+#### A. Lỗi đang chặn luồng (sửa trước)
+
+| # | Vị trí | Vấn đề | Hậu quả |
+|---|--------|--------|---------|
+| A1 | `AdminPayoutsPage.jsx` (tab `PAID`), `OrganizerPayoutsPage.jsx` (lọc `PAID`/`COMPLETED`) | Backend lưu trạng thái cuối là `SETTLED` (`PayoutSettlement.js`), frontend lọc theo `PAID` | Tab "Đã giải ngân" và tổng tiền "Đã giải ngân" luôn rỗng ở cả hai phía |
+| A2 | `organizerEventController.js` → `requestPayout` | Tìm `EContract` không lọc `status`; không có thì **tự tạo hợp đồng giả `SIGNED` 10%** | Có thể lấy nhầm hợp đồng `REJECTED`, hoa hồng đối soát sai so với hợp đồng đã ký |
+| A3 | `eventController.js` → `getById` (`GET /v1/events/:id`) | Không lọc theo `status` | Sự kiện `DRAFT` / `PENDING` / `CANCELLED` xem được công khai nếu biết ID |
+
+#### B. Điểm gây khó khi thao tác giữa hai bên
+
+1. **Không có thông báo.** KYC được duyệt / từ chối, sự kiện được duyệt / từ chối, hợp đồng chờ ký, payout đã chuyển khoản: Organizer không biết, phải tự vào từng trang kiểm tra. Admin cũng không biết Organizer đã ký hay vừa gửi lại. `utils/mailService.js` có sẵn nhưng chỉ dùng cho auth và email vé.
+2. **Admin duyệt "mù".** `AdminEventsPage.jsx` chỉ hiện tiêu đề, địa điểm, ngày, giấy phép. Không thấy mô tả, suất diễn, hạng vé, giá, sơ đồ ghế, form người tham dự. Muốn xem phải mở trang công khai (hiện mở được là nhờ lỗi A3).
+3. **Từ chối ký hợp đồng quá nặng.** Organizer không đồng ý mức hoa hồng thì sự kiện về `DRAFT`, phải gửi duyệt lại, Admin duyệt lại từ đầu: hai vòng chỉ để đổi một con số. Lý do từ chối ký (`rejectContract`) không hiện cho Admin ở tab Hợp đồng.
+4. **Sơ đồ ghế sau khi duyệt phải "liên hệ Admin".** `seatMapController.js` chặn Organizer tự dựng khi đã `APPROVED` / `PUBLISHED`. Admin nhận file SVG + Excel ngoài hệ thống, không có chỗ để Organizer gửi file.
+5. **Admin không thể từ chối payout.** `PayoutSettlement.status` chỉ có `REQUESTED / APPROVED / SETTLED`; số liệu sai thì không trả lại được cho Organizer.
+6. **Không có lịch sử trạng thái.** Audit log đã được gỡ khỏi hệ thống (`utils/audit.js` chỉ còn là hàm rỗng giữ tương thích) nên không có nguồn nào để truy lại; Organizer chỉ thấy lý do từ chối gần nhất, không biết sự kiện đã qua những bước nào.
+7. **Không có gì chuyển sự kiện sang `ENDED`.** Enum có `ENDED` nhưng không có cron / job nào đặt; dashboard đếm `ended` luôn bằng 0.
+
+#### C. Kế hoạch cải thiện
+
+**Giai đoạn 1: sửa lỗi chặn luồng (không đổi model)**
+- [x] A1: frontend đổi `PAID` → `SETTLED` ở tab và phép lọc tổng tiền.
+- [x] A2: `requestPayout` chỉ nhận hợp đồng `status = SIGNED`; không có thì trả 409 "Sự kiện chưa có hợp đồng đã ký", bỏ đoạn tự tạo hợp đồng.
+- [x] A3: `getById` chỉ trả `PUBLISHED` / `ENDED` cho khách; chủ sự kiện và `ADMIN` xem được mọi trạng thái (dùng làm nút "Xem trước").
+
+**Giai đoạn 2: giảm số vòng qua lại**
+- [x] **Thông báo:** thêm model `Notification { user_id, type, title, body, link, read_at }` + `GET /v1/user/notifications`, `PUT /:id/read`; gửi email + tạo thông báo tại 6 điểm: KYC duyệt / từ chối, sự kiện duyệt / từ chối, hợp đồng chờ ký, hợp đồng đã ký (báo Admin), payout đã chuyển. Chuông đếm chưa đọc trong `DashboardLayout.jsx`.
+- [x] **Panel chi tiết khi Admin duyệt:** `GET /v1/admin/events/:id` trả đầy đủ mô tả, suất diễn, hạng vé, banner, form tuỳ chỉnh, trạng thái sơ đồ ghế; `AdminEventsPage.jsx` thêm nút "Xem chi tiết" và "Xem trước trang công khai".
+- [x] **Đàm phán hợp đồng:** Organizer từ chối ký **bắt buộc kèm lý do**, `EContract` thêm `rejection_reason`; sự kiện về `PENDING` (không về `DRAFT`); Admin thấy lý do ngay ở tab Chờ duyệt và duyệt lại với mức hoa hồng mới. Bỏ được một vòng submit.
+- [x] **Sơ đồ ghế:** cho Organizer tự dựng khi `APPROVED` (chưa bán vé nên an toàn); khi `PUBLISHED` cho phép nếu không có ghế `HELD` / `SOLD`. Hết cảnh "liên hệ Admin".
+- [x] **Payout:** thêm `REJECTED` + `rejection_reason`, `PUT /v1/admin/payouts/:id/reject`; Organizer được gửi lại yêu cầu.
+
+**Giai đoạn 3: minh bạch**
+- [x] Timeline trạng thái: tab **Lịch sử** trong `OrganizerEventDashboardPage.jsx`, `GET /v1/organizer/events/:id/history`. Dữ liệu lấy từ trường mới `Event.status_history` (không dùng audit log vì đã bị gỡ), ghi bởi `utils/eventHistory.js` tại mọi điểm đổi trạng thái. Sự kiện tạo trước khi có tính năng này chỉ hiện một mốc.
+- [x] Admin dashboard có khối "Cần xử lý gấp": `GET /v1/admin/analytics/overview` trả thêm `overdue` (hợp đồng chờ ký quá 3 ngày, tính theo thời điểm tạo trong `_id`; sự kiện và KYC chờ duyệt quá 2 ngày).
+- [x] Job nền `endFinishedEvents` trong `bookingService`: gộp vào job 30 giây, cứ 10 lượt (khoảng 5 phút) chạy một lần, chuyển sự kiện `PUBLISHED` đã qua `end_time` sang `ENDED` và các suất `SCHEDULED` sang `ENDED`.
+
+**Thứ tự ưu tiên nếu ít thời gian:** A1, A2, Thông báo, Đàm phán hợp đồng, Panel chi tiết. Giai đoạn 1 làm được ngay; Thông báo và Đàm phán hợp đồng đụng model nên cần thống nhất với nhóm trước.
+
+#### D. Kết quả triển khai & kiểm thử
+
+**Quyết định thiết kế đã chốt**
+- Hợp đồng bị Organizer từ chối ký **không tạo hợp đồng mới**: `approveEvent` tái sử dụng hợp đồng `REJECTED` của sự kiện (đổi lại `WAITING_SIGN`, xoá lý do, cập nhật hoa hồng và điều khoản) vì `e_contracts` có index unique theo `event_id`.
+- Từ chối ký đưa sự kiện về `PENDING` thay vì `DRAFT`. Trang chi tiết công khai, tìm kiếm, đặt vé, chợ bán lại và sơ đồ công khai **chỉ cho `PUBLISHED`**. Trước đây các nơi này cho cả `APPROVED`, nghĩa là có thể bán vé trước khi ký hợp đồng.
+- Payout bị từ chối thì **cập nhật lại chính bản ghi cũ** khi Organizer gửi lại (index unique theo `event_id`).
+- Gửi thông báo không bao giờ làm hỏng nghiệp vụ chính: `notify` và `notifyAdmins` chỉ ghi log khi lỗi, email gửi không chờ.
+
+**Thông báo đã gửi tại các điểm:** KYC nộp, duyệt, từ chối; sự kiện gửi duyệt, duyệt, từ chối; hợp đồng đã ký, bị từ chối ký; payout yêu cầu, duyệt, từ chối, đã chuyển khoản. Chuông ở `DashboardLayout` (`components/NotificationBell.jsx`) tự làm mới 30 giây. API: `GET /v1/user/notifications`, `PUT /v1/user/notifications/:id/read`, `PUT /v1/user/notifications/read-all`.
+
+**File mới và thay đổi chính**
+- Backend mới: `models/Notification.js`, `services/notificationService.js`, `controllers/notificationController.js`, `utils/eventHistory.js`, `scripts/test-admin-organizer-flow.js`. Thêm `mailService.sendNotificationEmail`.
+- Backend sửa: `contractController.js` (chi tiết admin, tái sử dụng hợp đồng, lý do từ chối), `adminController.js` (từ chối payout, cảnh báo quá hạn), `organizerEventController.js` (payout gửi lại, lịch sử), `seatMapController.js`, `bookingService.js` (job ENDED), `eventController.js`, `resaleController.js`, các model `Event` (`status_history`), `EContract` (`rejection_reason`), `PayoutSettlement` (`REJECTED`, `rejection_reason`, `rejected_by_admin`).
+- Frontend: `AdminEventsPage` (nút **Xem chi tiết**, xem trước trang công khai, lý do từ chối ký), `AdminPayoutsPage` (nút Từ chối, tab Đã giải ngân và Đã từ chối), `OrganizerEventDashboardPage` (tab Lịch sử, gửi lại đối soát), `OrganizerContractsPage` (bắt buộc nhập lý do), `AdminDashboardPage` (khối cảnh báo).
+- **Sau khi pull phải chạy `npm run db:init` ở `backend/`** để cập nhật validator Mongo (collection `notifications`, trường mới của `e_contracts` và `payout_settlements`). Nếu không, Mongo sẽ từ chối ghi các trường mới.
+
+**Kiểm thử**
+- `BASE=http://localhost:3999 node scripts/test-admin-organizer-flow.js`: **70 pass, 0 fail** trên API và MongoDB thật (SMTP và Cloudinary tắt). Bao phủ A1 đến A3, chuỗi thông báo, chi tiết admin, đàm phán hợp đồng, sơ đồ ghế khi APPROVED và PUBLISHED (có và chưa bán vé), từ chối và gửi lại payout, lịch sử trạng thái, job ENDED (chạy lại không đổi gì), cảnh báo quá hạn. Script tự dọn dữ liệu.
+- `vite build` frontend đạt.
+- **Chưa làm:** bấm thử giao diện trên trình duyệt thật (chuông thông báo, panel chi tiết, tab Lịch sử, nút Từ chối payout). Chưa thử gửi email thông báo qua SMTP thật, chỉ chạy chế độ mô phỏng. Chưa chạy eslint vì repo không có file cấu hình eslint.
+
+**Các script test cũ (đã so sánh với bản chưa sửa).** Tôi chạy cùng các bộ test sẵn có trên bản `HEAD` sạch và trên bản đã sửa, cùng một DB. Tập lỗi **giống hệt nhau** ở `test-organizer-flow.js` (3 fail) và `test-all-remaining-ucs.js` (13 fail), nên các lỗi này không do thay đổi ở mục 4.3. Một phần nguyên nhân đã rõ: `demo_organizer` có sẵn KYC `VERIFIED` nên bước nộp KYC bị 409; các test wishlist, follow, review gọi tính năng đã bị xoá; `test-organizer-events.js` còn kỳ vọng audit log (đã gỡ). **Chưa sửa các test cũ này**, nên dọn hoặc cập nhật riêng.
+
+**Một lỗi có sẵn đã sửa kèm:** `organizerEventController.cancel` gọi `str(req.body?.reason)` mặc định bắt buộc và không có nhãn, nên huỷ sự kiện mà không gửi lý do trả 400 "Thiếu undefined". Đã đổi thành lý do tuỳ chọn có nhãn. `test-organizer-events.js` giảm từ 12 xuống 6 fail. Sáu lỗi còn lại có sẵn và không liên quan: validate giờ bán vé, `lowest_price`, danh mục không tồn tại, test kỳ vọng audit log, và test kỳ vọng huỷ bị chặn khi có đơn đã thanh toán trong khi code hiện hoàn tiền hàng loạt.
+
+**Lưu ý khi chạy `test-all-remaining-ucs.js`:** mỗi lần chạy nó để lại một sự kiện "Sự Kiện Test Đầy Đủ Use Cases" trong DB (không tự dọn). Tôi đã xoá các bản do tôi chạy, DB về đúng số liệu ban đầu.
+
 ---
 
 ## ⚙️ 5. Hướng Dẫn Cài Đặt & Khởi Chạy (Getting Started)

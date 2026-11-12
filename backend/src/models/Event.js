@@ -47,6 +47,11 @@ const schema = new Schema(
     is_special: { type: Boolean, default: false },
     lowest_price: { type: Number, default: 0 },
     rejection_reason: { type: String },
+    // Lịch sử đổi trạng thái (hiện ở tab "Lịch sử" của Organizer)
+    status_history: {
+      type: [{ _id: false, status: String, at: { type: Date, default: Date.now }, by: { type: Schema.Types.ObjectId, ref: "User" }, note: String }],
+      default: [],
+    },
     created_at: { type: Date, default: Date.now },
   },
   options,

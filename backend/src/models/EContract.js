@@ -13,6 +13,7 @@ const schema = new Schema(
     signed_pdf_url: { type: String },
     signer_ip: { type: String, maxlength: 45 },
     signed_at: { type: Date },
+    rejection_reason: { type: String, maxlength: 1000 }, // lý do Organizer từ chối ký (Admin xem để chỉnh lại điều khoản)
     status: { type: String, enum: ["WAITING_SIGN", "SIGNED", "REJECTED"], default: "WAITING_SIGN", required: true },
   },
   options,

@@ -55,6 +55,12 @@ export default function AdminDashboardPage() {
     );
 
   const pa = overview?.pendingActions || {};
+  const od = overview?.overdue || {};
+  const overdueRows = [
+    [od.contractsWaitingSign3d, 'hợp đồng chờ Organizer ký quá 3 ngày', PATHS.ADMIN_EVENTS],
+    [od.eventsPending2d, 'sự kiện chờ duyệt quá 2 ngày', PATHS.ADMIN_EVENTS],
+    [od.kycPending2d, 'hồ sơ KYC chờ duyệt quá 2 ngày', PATHS.ADMIN_KYC],
+  ].filter(([n]) => n > 0);
   const months = revenue?.monthlyStats || [];
   const maxGmv = Math.max(1, ...months.map((m) => m.grossMerchandiseValue || 0));
   const thisYear = new Date().getFullYear();
@@ -65,6 +71,17 @@ export default function AdminDashboardPage() {
         <h1 className='text-2xl font-bold tracking-tight'>Tổng quan hệ thống</h1>
         <p className='text-sm text-[#71717a] mt-1'>Số liệu thật từ hệ thống, cập nhật mỗi lần mở trang.</p>
       </div>
+
+      {overdueRows.length > 0 && (
+        <div className='bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-1'>
+          <div className='text-sm font-bold text-amber-900'>Cần xử lý gấp</div>
+          {overdueRows.map(([n, text, to]) => (
+            <Link key={text} to={to} className='block text-sm text-amber-900 hover:underline'>
+              {n} {text}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
         <Stat icon={Users} label='Người dùng' value={overview?.users?.total ?? 0} sub={Object.entries(overview?.users?.byRole || {}).map(([k, v]) => `${ROLE_LABEL[k] || k}: ${v}`).join(' · ')} to={PATHS.ADMIN_USERS} />

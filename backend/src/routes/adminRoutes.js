@@ -10,6 +10,7 @@ router.use(requireRole("ADMIN"));
 
 // UC39, UC41: Phê duyệt sự kiện & Quản lý hợp đồng
 router.get("/events", contractCtrl.adminListEvents);
+router.get("/events/:id", contractCtrl.adminEventDetail);
 router.get("/events/:id/legal-doc", contractCtrl.adminLegalDoc);
 router.put("/events/:id/approve", contractCtrl.approveEvent);
 router.put("/events/:id/reject", contractCtrl.rejectEvent);
@@ -39,6 +40,7 @@ router.put("/events/:id/featured", adminCtrl.setEventFeatured);
 router.get("/payouts", adminCtrl.listPayouts);
 router.put("/payouts/:id/approve", adminCtrl.approvePayout);
 router.put("/payouts/:id/settle", adminCtrl.settlePayout);
+router.put("/payouts/:id/reject", adminCtrl.rejectPayout);
 
 // UC43: Hoàn tiền — CHỈ khi sự kiện bị huỷ (hoàn hàng loạt). Không có hoàn vé lẻ.
 router.get("/refunds", adminCtrl.listRefunds);

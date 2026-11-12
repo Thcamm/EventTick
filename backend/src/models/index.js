@@ -16,4 +16,5 @@ module.exports = {
   ResaleListing: require("./ResaleListing"),
   RefundRequest: require("./RefundRequest"),
   PayoutSettlement: require("./PayoutSettlement"),
+  Notification: require("./Notification"),
 };

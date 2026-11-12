@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Plus, Trash2, Wallet, Users, ReceiptText, BarChart3, ScanLine } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Plus, Trash2, Wallet, Users, ReceiptText, BarChart3, ScanLine, History } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { inputCls } from '../../components/FormField';
@@ -14,7 +14,10 @@ const TABS = [
   { k: 'attendees', t: 'Người tham dự', i: Users },
   { k: 'staff', t: 'Nhân viên soát vé', i: ScanLine },
   { k: 'payout', t: 'Đối soát', i: Wallet },
+  { k: 'history', t: 'Lịch sử', i: History },
 ];
+const EVENT_STATUS = { DRAFT: 'Bản nháp', PENDING: 'Chờ Admin duyệt', APPROVED: 'Đã duyệt, chờ ký hợp đồng', PUBLISHED: 'Đang mở bán', CANCELLED: 'Đã huỷ', ENDED: 'Đã kết thúc' };
+const PAYOUT_STATUS = { REQUESTED: 'Chờ Admin duyệt', APPROVED: 'Đã duyệt, chờ chuyển khoản', SETTLED: 'Đã giải ngân', REJECTED: 'Bị từ chối' };
 const ORDER_STATUS = { PAID: 'Đã thanh toán', PENDING_PAYMENT: 'Chờ thanh toán', EXPIRED: 'Hết hạn', CANCELLED: 'Đã huỷ', REFUNDED: 'Đã hoàn tiền' };
 const TICKET_STATUS = { VALID: 'Hợp lệ', USED: 'Đã soát', LISTED_RESALE: 'Đang bán lại', RESOLD_INVALID: 'Đã sang nhượng', REFUNDED: 'Đã hoàn tiền' };
 
@@ -64,6 +67,7 @@ export default function OrganizerEventDashboardPage() {
           attendees: [`/organizer/events/${id}/attendees${q}`],
           staff: [`/organizer/events/${id}/staff`],
           payout: [`/organizer/events/${id}/payout-summary`],
+          history: [`/organizer/events/${id}/history`],
         }[which];
         const r = await api.get(urls[0]);
         setData((p) => ({ ...p, [which]: r }));
@@ -112,7 +116,7 @@ export default function OrganizerEventDashboardPage() {
   };
 
   const requestPayout = async () => {
-    if (!window.confirm('Gửi yêu cầu đối soát và rút tiền cho sự kiện này? Mỗi sự kiện chỉ yêu cầu một lần.')) return;
+    if (!window.confirm('Gửi yêu cầu đối soát và rút tiền cho sự kiện này?')) return;
     setBusy(true);
     try {
       const r = await api.post(`/organizer/events/${id}/payout/request`, {});
@@ -337,6 +341,24 @@ export default function OrganizerEventDashboardPage() {
         </div>
       )}
 
+      {tab === 'history' && data.history && (
+        <div className='max-w-2xl space-y-3'>
+          <p className='text-sm text-[#52525b]'>
+            Trạng thái hiện tại: <strong>{EVENT_STATUS[data.history.status] || data.history.status}</strong>
+          </p>
+          <ol className='border-l-2 border-[#e4e4e7] pl-5 space-y-4'>
+            {data.history.history.map((h, i) => (
+              <li key={i} className='relative'>
+                <span className='absolute -left-[27px] top-1.5 w-3 h-3 rounded-full bg-[#09090b]' />
+                <div className='text-sm font-semibold'>{EVENT_STATUS[h.status] || h.status}</div>
+                <div className='text-xs text-[#71717a]'>{fmt(h.at)}</div>
+                {h.note && <div className='text-xs text-[#52525b] mt-0.5'>{h.note}</div>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       {tab === 'payout' && ps && (
         <div className='space-y-4 max-w-2xl'>
           <div className='grid gap-4 sm:grid-cols-3'>
@@ -344,16 +366,18 @@ export default function OrganizerEventDashboardPage() {
             <Stat label={`Hoa hồng ${ps.commissionRatePct}%`} value={money(ps.platformCommissionAmt)} />
             <Stat label='Thực nhận' value={money(ps.netPayoutAmount)} />
           </div>
-          {ps.existingSettlement ? (
-            <div className='p-4 bg-[#f9f9fb] border border-[#e4e4e7] rounded-xl text-sm'>
-              Đã gửi yêu cầu đối soát: <strong>{ps.existingSettlement.status}</strong> · {money(ps.existingSettlement.netPayoutAmount)}
+          {ps.existingSettlement && (
+            <div className={`p-4 border rounded-xl text-sm ${ps.existingSettlement.status === 'REJECTED' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-[#f9f9fb] border-[#e4e4e7]'}`}>
+              Yêu cầu đối soát: <strong>{PAYOUT_STATUS[ps.existingSettlement.status] || ps.existingSettlement.status}</strong> · {money(ps.existingSettlement.netPayoutAmount)}
               {ps.existingSettlement.settledAt && ` · giải ngân ${fmt(ps.existingSettlement.settledAt)}`}
+              {ps.existingSettlement.status === 'REJECTED' && ps.existingSettlement.rejectionReason && <div className='mt-1'>Lý do: {ps.existingSettlement.rejectionReason}</div>}
             </div>
-          ) : (
-            <button type='button' disabled={busy || !ps.grossRevenue} className='tb-btn tb-btn-solid' onClick={requestPayout}>
-              <Wallet size={14} /> {busy ? 'Đang gửi...' : 'Yêu cầu đối soát & rút tiền'}
-            </button>
           )}
+          {!ps.existingSettlement || ps.existingSettlement.status === 'REJECTED' ? (
+            <button type='button' disabled={busy || !ps.grossRevenue} className='tb-btn tb-btn-solid' onClick={requestPayout}>
+              <Wallet size={14} /> {busy ? 'Đang gửi...' : ps.existingSettlement ? 'Gửi lại yêu cầu đối soát' : 'Yêu cầu đối soát & rút tiền'}
+            </button>
+          ) : null}
           <p className='text-xs text-[#71717a]'>Tiền được chuyển vào tài khoản ngân hàng trong hồ sơ KYC sau khi Admin duyệt đối soát.</p>
         </div>
       )}

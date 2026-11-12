@@ -112,9 +112,9 @@ export default function OrganizerEventsPage() {
                     </span>
                     <span>Từ {money(e.lowest_price)}</span>
                   </div>
-                  {e.status === 'DRAFT' && e.rejection_reason && (
+                  {['DRAFT', 'PENDING'].includes(e.status) && e.rejection_reason && (
                     <p className='text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2'>
-                      Admin từ chối: {e.rejection_reason}
+                      {e.status === 'PENDING' ? 'Ghi chú' : 'Admin từ chối'}: {e.rejection_reason}
                     </p>
                   )}
 

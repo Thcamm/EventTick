@@ -180,7 +180,7 @@ exports.getResaleEvents = ah(async (req, res) => {
     byEvent.set(key, cur);
   }
 
-  const events = await Event.find({ _id: { $in: [...byEvent.keys()] }, status: { $in: ["APPROVED", "PUBLISHED"] } })
+  const events = await Event.find({ _id: { $in: [...byEvent.keys()] }, status: "PUBLISHED" })
     .select("title banner_url thumbnail_url venue_name city start_time");
 
   const q = String(req.query.q || "").trim().toLowerCase();

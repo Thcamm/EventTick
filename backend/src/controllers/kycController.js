@@ -3,6 +3,7 @@ const { savePrivate, sendPrivate } = require("../services/privateStorage");
 const { sniff, resourceTypeOf } = require("../utils/fileType");
 const { httpError, validId, ah, str } = require("../utils/http");
 const { audit } = require("../utils/audit");
+const { notify, notifyAdmins } = require("../services/notificationService");
 
 const ALLOWED_DOC = ["jpeg", "png", "webp", "pdf"];
 
@@ -87,6 +88,7 @@ exports.submit = ah(async (req, res) => {
   }
 
   await audit(req, "KYC_SUBMIT", "organizer_profiles", profile._id);
+  notifyAdmins({ type: "KYC_SUBMITTED", title: "Hồ sơ KYC mới chờ duyệt", body: `${profile.organization_name} vừa gửi hồ sơ xác minh nhà tổ chức.`, link: "/admin/kyc" });
   res.status(201).json({
     success: true,
     message: "Đã gửi hồ sơ KYC, vui lòng chờ Admin duyệt.",
@@ -159,6 +161,7 @@ exports.approve = ah(async (req, res) => {
   // Chỉ nâng CUSTOMER lên ORGANIZER; không hạ quyền ADMIN/STAFF
   await User.updateOne({ _id: profile.user_id, role: "CUSTOMER" }, { role: "ORGANIZER" });
   await audit(req, "KYC_APPROVE", "organizer_profiles", profile._id, { userId: profile.user_id });
+  notify(profile.user_id, { type: "KYC_APPROVED", title: "Hồ sơ KYC đã được duyệt", body: "Bạn đã trở thành nhà tổ chức và có thể tạo sự kiện.", link: "/organizer/events" });
   res.json({ success: true, message: "Đã duyệt hồ sơ KYC", profile: profileToClient(profile) });
 });
 
@@ -175,5 +178,6 @@ exports.reject = ah(async (req, res) => {
     throw httpError(exists ? "Hồ sơ không ở trạng thái chờ duyệt" : "Không tìm thấy hồ sơ", exists ? 409 : 404);
   }
   await audit(req, "KYC_REJECT", "organizer_profiles", profile._id, { reason });
+  notify(profile.user_id, { type: "KYC_REJECTED", title: "Hồ sơ KYC bị từ chối", body: `Lý do: ${reason}. Bạn có thể chỉnh sửa và gửi lại.`, link: "/organizer/kyc" });
   res.json({ success: true, message: "Đã từ chối hồ sơ KYC", profile: profileToClient(profile) });
 });

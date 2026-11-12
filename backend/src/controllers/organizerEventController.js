@@ -19,6 +19,8 @@ const bookingService = require("../services/bookingService");
 const { sniff, resourceTypeOf } = require("../utils/fileType");
 const { httpError, validId, ah, str, intIn, date } = require("../utils/http");
 const { audit } = require("../utils/audit");
+const { notifyAdmins } = require("../services/notificationService");
+const { logEventStatus } = require("../utils/eventHistory");
 
 const HOUR = 3600 * 1000;
 const SELLING = ["DRAFT", "APPROVED", "PUBLISHED"]; // trạng thái cho phép chỉnh hạng vé / sơ đồ
@@ -283,6 +285,8 @@ exports.create = ah(async (req, res) => {
     }
 
     await audit(req, draft ? "EVENT_CREATE_DRAFT" : "EVENT_CREATE", "events", event._id);
+    await logEventStatus(event._id, event.status, { by: req.user.id, note: draft ? "Tạo bản nháp" : "Tạo và gửi duyệt" });
+    if (!draft) notifyAdmins({ type: "EVENT_SUBMITTED", title: "Sự kiện mới chờ duyệt", body: `"${event.title}" vừa được gửi duyệt.`, link: "/admin/events" });
 
     console.log(`✅ [Tạo sự kiện THÀNH CÔNG] Event ID: ${event._id} | Tiêu đề: "${event.title}" | Trạng thái: ${event.status}`);
     console.log(`================================================================\n`);
@@ -318,7 +322,7 @@ exports.detail = ah(async (req, res) => {
   const [sessions, tiers, contract, vouchers] = await Promise.all([
     EventSession.find({ event_id: e._id }).sort({ start_time: 1 }),
     TicketTier.find({ event_id: e._id }).sort({ price: 1 }),
-    EContract.findOne({ event_id: e._id }).select("status commission_rate_pct signed_at"),
+    EContract.findOne({ event_id: e._id }).select("status commission_rate_pct signed_at rejection_reason"),
     Voucher.countDocuments({ event_id: e._id }),
   ]);
   const o = e.toObject();
@@ -334,10 +338,19 @@ exports.detail = ah(async (req, res) => {
         _id: s._id, name: s.name, startTime: s.start_time, endTime: s.end_time, status: s.status, seatMap: s.seat_map,
         tiers: tiers.filter((t) => t.session_id.equals(s._id)).map(tierToClient),
       })),
-      contract: contract ? { status: contract.status, commissionRatePct: contract.commission_rate_pct, signedAt: contract.signed_at } : null,
+      contract: contract ? { status: contract.status, commissionRatePct: contract.commission_rate_pct, signedAt: contract.signed_at, rejectionReason: contract.rejection_reason } : null,
       voucherCount: vouchers,
     },
   });
+});
+
+// GET /v1/organizer/events/:id/history — các mốc trạng thái của sự kiện (mới nhất trước)
+exports.history = ah(async (req, res) => {
+  const e = await ownEvent(req, req.params.id);
+  const history = [...(e.status_history || [])].sort((a, b) => new Date(b.at) - new Date(a.at));
+  // Sự kiện tạo trước khi có tính năng này: vẫn hiện được mốc tạo
+  if (!history.length) history.push({ status: e.status, at: e.created_at, note: "Chưa có lịch sử chi tiết" });
+  res.json({ success: true, status: e.status, history: history.map((h) => ({ status: h.status, at: h.at, note: h.note })) });
 });
 
 // ------------------------------------------------------------------ UC23: sửa / rút / huỷ
@@ -430,6 +443,8 @@ exports.submit = ah(async (req, res) => {
   const claimed = await Event.findOneAndUpdate({ _id: e._id, status: "DRAFT" }, { status: "PENDING", $unset: { rejection_reason: 1 } }, { new: true });
   if (!claimed) throw httpError("Trạng thái sự kiện vừa thay đổi", 409);
   await audit(req, "EVENT_SUBMIT", "events", e._id);
+  await logEventStatus(e._id, "PENDING", { by: req.user.id, note: "Gửi Admin duyệt" });
+  notifyAdmins({ type: "EVENT_SUBMITTED", title: "Sự kiện mới chờ duyệt", body: `"${e.title}" vừa được gửi duyệt.`, link: "/admin/events" });
   res.json({ success: true, message: "Đã gửi Admin duyệt", status: claimed.status });
 });
 
@@ -439,6 +454,7 @@ exports.withdraw = ah(async (req, res) => {
   const claimed = await Event.findOneAndUpdate({ _id: e._id, status: "PENDING" }, { status: "DRAFT" }, { new: true });
   if (!claimed) throw httpError(`Chỉ rút lại được sự kiện đang chờ duyệt (hiện: ${e.status})`, 409);
   await audit(req, "EVENT_WITHDRAW", "events", e._id);
+  await logEventStatus(e._id, "DRAFT", { by: req.user.id, note: "Organizer rút lại để chỉnh sửa" });
   res.json({ success: true, message: "Đã rút lại, sự kiện trở về bản nháp", status: claimed.status });
 });
 
@@ -446,7 +462,7 @@ exports.withdraw = ah(async (req, res) => {
 exports.cancel = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   if (["CANCELLED", "ENDED"].includes(e.status)) throw httpError(`Sự kiện đã ở trạng thái ${e.status}`, 409);
-  const reason = str(req.body?.reason) || "Ban tổ chức hủy sự kiện";
+  const reason = str(req.body?.reason, 1000, "lý do huỷ", { required: false }) || "Ban tổ chức hủy sự kiện";
   const paid = await Order.countDocuments({ event_id: e._id, status: "PAID" });
 
   if (paid > 0) {
@@ -477,6 +493,7 @@ exports.cancel = ah(async (req, res) => {
   await EventSession.updateMany({ event_id: e._id }, { status: "CANCELLED" });
   await EContract.updateOne({ event_id: e._id, status: "WAITING_SIGN" }, { status: "REJECTED" });
   await audit(req, "EVENT_CANCEL", "events", e._id, { releasedOrders: released, reason });
+  await logEventStatus(e._id, "CANCELLED", { by: req.user.id, note: `Organizer huỷ: ${reason}` });
   res.json({ success: true, message: "Đã huỷ sự kiện", status: "CANCELLED", releasedOrders: released, refundedCount: 0 });
 });
 
@@ -1070,7 +1087,7 @@ exports.getPayoutSummary = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
   const [paidOrders, contract, profile, existingSettlement] = await Promise.all([
     Order.find({ event_id: e._id, status: "PAID" }),
-    EContract.findOne({ event_id: e._id, status: { $in: ["WAITING_SIGN", "SIGNED"] } }),
+    EContract.findOne({ event_id: e._id, status: "SIGNED" }),
     OrganizerProfile.findOne({ user_id: req.user.id }),
     PayoutSettlement.findOne({ event_id: e._id }),
   ]);
@@ -1092,6 +1109,7 @@ exports.getPayoutSummary = ah(async (req, res) => {
       ? {
           id: existingSettlement._id,
           status: existingSettlement.status,
+          rejectionReason: existingSettlement.rejection_reason,
           netPayoutAmount: existingSettlement.net_payout_amount,
           settledAt: existingSettlement.settled_at,
         }
@@ -1110,20 +1128,13 @@ exports.requestPayout = ah(async (req, res) => {
   const e = await ownEvent(req, req.params.id);
 
   const existingSettlement = await PayoutSettlement.findOne({ event_id: e._id });
-  if (existingSettlement) {
+  // Yêu cầu bị Admin từ chối thì được gửi lại (cập nhật bản ghi cũ vì mỗi sự kiện chỉ có một yêu cầu)
+  if (existingSettlement && existingSettlement.status !== "REJECTED") {
     throw httpError(`Sự kiện này đã có yêu cầu đối soát ở trạng thái ${existingSettlement.status}`, 409);
   }
 
-  let contract = await EContract.findOne({ event_id: e._id });
-  if (!contract) {
-    contract = await EContract.create({
-      event_id: e._id,
-      organizer_id: req.user.id,
-      commission_rate_pct: 10,
-      contract_terms_html: "<p>Hợp đồng điện tử</p>",
-      status: "SIGNED",
-    });
-  }
+  const contract = await EContract.findOne({ event_id: e._id, status: "SIGNED" });
+  if (!contract) throw httpError("Sự kiện chưa có hợp đồng đã ký, chưa thể yêu cầu đối soát", 409);
 
   const paidOrders = await Order.find({ event_id: e._id, status: "PAID" });
   const grossRevenue = paidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
@@ -1131,8 +1142,7 @@ exports.requestPayout = ah(async (req, res) => {
   const platformCommissionAmt = Math.round((grossRevenue * commissionRatePct) / 100);
   const netPayoutAmount = Math.max(0, grossRevenue - platformCommissionAmt);
 
-  const settlement = await PayoutSettlement.create({
-    event_id: e._id,
+  const payoutData = {
     organizer_id: req.user.id,
     contract_id: contract._id,
     gross_revenue: grossRevenue,
@@ -1140,12 +1150,24 @@ exports.requestPayout = ah(async (req, res) => {
     platform_commission_amt: platformCommissionAmt,
     net_payout_amount: netPayoutAmount,
     status: "REQUESTED",
-  });
+  };
+  let settlement;
+  if (existingSettlement) {
+    settlement = await PayoutSettlement.findOneAndUpdate(
+      { _id: existingSettlement._id, status: "REJECTED" },
+      { ...payoutData, $unset: { rejection_reason: 1, rejected_by_admin: 1 } },
+      { new: true },
+    );
+    if (!settlement) throw httpError("Yêu cầu đối soát vừa thay đổi, hãy tải lại", 409);
+  } else {
+    settlement = await PayoutSettlement.create({ event_id: e._id, ...payoutData });
+  }
 
   await audit(req, "PAYOUT_REQUEST_CREATE", "payout_settlements", settlement._id, {
     eventId: e._id,
     netPayoutAmount,
   });
+  notifyAdmins({ type: "PAYOUT_REQUESTED", title: "Yêu cầu đối soát mới", body: `"${e.title}" yêu cầu đối soát ${netPayoutAmount.toLocaleString("vi-VN")} ₫.`, link: "/admin/payouts" });
 
   res.status(201).json({
     success: true,
@@ -1172,6 +1194,7 @@ exports.listPayouts = ah(async (req, res) => {
       platformCommissionAmt: s.platform_commission_amt,
       netPayoutAmount: s.net_payout_amount,
       status: s.status,
+      rejectionReason: s.rejection_reason,
       bankTransferReceiptUrl: s.bank_transfer_receipt_url,
       settledAt: s.settled_at,
       createdAt: s.created_at,

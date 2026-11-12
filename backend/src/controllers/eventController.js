@@ -1,9 +1,9 @@
-const { Event, EventSession, TicketTier, Category, Ticket } = require('../models');
+const { Event, EventSession, TicketTier, Category, Ticket, User } = require('../models');
 const { saveUploadedFile } = require('../utils/upload');
 const { eventToClient } = require('../utils/serializers');
 const { redis } = require('../config/redis');
 
-const PUBLIC_STATUS = { $in: ['APPROVED', 'PUBLISHED'] };
+const PUBLIC_STATUS = 'PUBLISHED'; // chỉ mở bán sau khi Organizer đã ký hợp đồng
 
 /** Gắn event_sessions + ticket_tiers vào danh sách event (2 query cho cả danh sách). */
 async function withTiers(events) {
@@ -25,6 +25,12 @@ exports.getById = async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
+    }
+    // Sự kiện chưa mở bán chỉ chủ sự kiện và Admin xem được (dùng cho nút "Xem trước")
+    if (!['PUBLISHED', 'ENDED'].includes(event.status)) {
+      const viewer = req.user ? await User.findById(req.user.id).select('role status') : null;
+      const allowed = viewer && viewer.status !== 'BLOCKED' && (viewer.role === 'ADMIN' || String(event.organizer_id) === String(viewer._id));
+      if (!allowed) return res.status(404).json({ success: false, message: 'Không tìm thấy sự kiện' });
     }
     const [populated] = await withTiers([event]);
     res.json({ success: true, event: populated });

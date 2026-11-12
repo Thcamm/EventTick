@@ -9,8 +9,7 @@ const fmt = (d) => (d ? new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho
 const STATUS = {
   REQUESTED: { label: 'Chờ Admin duyệt', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
   APPROVED: { label: 'Đã duyệt, chờ chuyển khoản', cls: 'bg-blue-50 text-blue-800 border-blue-200' },
-  PAID: { label: 'Đã giải ngân', cls: 'bg-[#09090b] text-white border-[#09090b]' },
-  COMPLETED: { label: 'Đã giải ngân', cls: 'bg-[#09090b] text-white border-[#09090b]' },
+  SETTLED: { label: 'Đã giải ngân', cls: 'bg-[#09090b] text-white border-[#09090b]' },
   REJECTED: { label: 'Bị từ chối', cls: 'bg-red-50 text-red-700 border-red-200' },
 };
 
@@ -28,7 +27,7 @@ export default function OrganizerPayoutsPage() {
       .finally(() => setLoading(false));
   }, [showToast]);
 
-  const total = items.filter((p) => ['PAID', 'COMPLETED'].includes(p.status)).reduce((s, p) => s + (p.netPayoutAmount || 0), 0);
+  const total = items.filter((p) => p.status === 'SETTLED').reduce((s, p) => s + (p.netPayoutAmount || 0), 0);
 
   return (
     <div className='space-y-6'>
@@ -78,6 +77,7 @@ export default function OrganizerPayoutsPage() {
                     <td className='font-semibold'>{money(p.netPayoutAmount)}</td>
                     <td>
                       <span className={`px-2.5 py-1 rounded-full border text-xs font-semibold ${st.cls}`}>{st.label}</span>
+                      {p.status === 'REJECTED' && p.rejectionReason && <div className='text-xs text-red-700 mt-1 max-w-xs'>{p.rejectionReason}</div>}
                     </td>
                     <td className='text-xs text-[#52525b]'>{fmt(p.settledAt)}</td>
                   </tr>

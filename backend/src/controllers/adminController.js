@@ -17,6 +17,7 @@ const {
 const bookingService = require("../services/bookingService");
 const { httpError, validId, ah, str } = require("../utils/http");
 const { audit } = require("../utils/audit");
+const { notify } = require("../services/notificationService");
 
 // =====================================================================
 // UC37: QUẢN LÝ NGƯỜI DÙNG & RBAC
@@ -277,6 +278,7 @@ exports.listPayouts = ah(async (req, res) => {
       platformCommissionAmt: p.platform_commission_amt,
       netPayoutAmount: p.net_payout_amount,
       status: p.status,
+      rejectionReason: p.rejection_reason,
       bankTransferReceiptUrl: p.bank_transfer_receipt_url,
       settledByAdmin: p.settled_by_admin?.full_name || p.settled_by_admin?.username,
       settledAt: p.settled_at,
@@ -300,7 +302,25 @@ exports.approvePayout = ah(async (req, res) => {
   await payout.save();
 
   await audit(req, "PAYOUT_APPROVE", "payout_settlements", payout._id);
+  notify(payout.organizer_id, { type: "PAYOUT_APPROVED", title: "Yêu cầu đối soát đã được duyệt", body: "Admin sẽ chuyển khoản vào tài khoản ngân hàng trong hồ sơ KYC của bạn.", link: "/organizer/payouts" });
   res.json({ success: true, message: "Đã duyệt yêu cầu đối soát", payout });
+});
+
+// PUT /v1/admin/payouts/:id/reject  { reason } — trả yêu cầu về cho Organizer (số liệu sai, thiếu thông tin...)
+exports.rejectPayout = ah(async (req, res) => {
+  const reason = str(req.body?.reason, 1000, "lý do từ chối");
+  const payout = await PayoutSettlement.findOneAndUpdate(
+    { _id: validId(req.params.id, "ID yêu cầu đối soát"), status: { $in: ["REQUESTED", "APPROVED"] } },
+    { status: "REJECTED", rejection_reason: reason, rejected_by_admin: req.user.id },
+    { new: true },
+  );
+  if (!payout) {
+    const exists = await PayoutSettlement.exists({ _id: req.params.id });
+    throw httpError(exists ? "Chỉ từ chối được yêu cầu đang chờ duyệt hoặc chờ chuyển khoản" : "Không tìm thấy yêu cầu đối soát", exists ? 409 : 404);
+  }
+  await audit(req, "PAYOUT_REJECT", "payout_settlements", payout._id, { reason });
+  notify(payout.organizer_id, { type: "PAYOUT_REJECTED", title: "Yêu cầu đối soát bị từ chối", body: `Lý do: ${reason}. Bạn có thể gửi lại yêu cầu.`, link: "/organizer/payouts" });
+  res.json({ success: true, message: "Đã từ chối yêu cầu đối soát", payout });
 });
 
 // PUT /v1/admin/payouts/:id/settle
@@ -321,6 +341,7 @@ exports.settlePayout = ah(async (req, res) => {
   await audit(req, "PAYOUT_SETTLE", "payout_settlements", payout._id, {
     netPayoutAmount: payout.net_payout_amount,
   });
+  notify(payout.organizer_id, { type: "PAYOUT_SETTLED", title: "Đã chuyển khoản đối soát", body: `Admin đã chuyển ${Number(payout.net_payout_amount).toLocaleString("vi-VN")} ₫ vào tài khoản của bạn.`, link: "/organizer/payouts" });
 
   res.json({ success: true, message: "Đã xác nhận giải ngân đối soát thành công", payout });
 });
@@ -483,6 +504,9 @@ exports.getOverviewAnalytics = ah(async (req, res) => {
     pendingKYC,
     pendingPayouts,
     pendingRefunds,
+    staleContracts,
+    staleEvents,
+    staleKyc,
   ] = await Promise.all([
     User.countDocuments(),
     User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
@@ -492,6 +516,10 @@ exports.getOverviewAnalytics = ah(async (req, res) => {
     OrganizerProfile.countDocuments({ kyc_status: "PENDING" }),
     PayoutSettlement.countDocuments({ status: "REQUESTED" }),
     RefundRequest.countDocuments({ status: "PROCESSING" }),
+    // Việc bị bỏ quên: hợp đồng chờ ký > 3 ngày, sự kiện / KYC chờ duyệt > 2 ngày
+    EContract.countDocuments({ status: "WAITING_SIGN", _id: { $lt: require("mongoose").Types.ObjectId.createFromTime(Math.floor((Date.now() - 3 * 864e5) / 1000)) } }),
+    Event.countDocuments({ status: "PENDING", created_at: { $lt: new Date(Date.now() - 2 * 864e5) } }),
+    OrganizerProfile.countDocuments({ kyc_status: "PENDING", submitted_at: { $lt: new Date(Date.now() - 2 * 864e5) } }),
   ]);
 
   const totalGMV = paidOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0);
@@ -515,6 +543,7 @@ exports.getOverviewAnalytics = ah(async (req, res) => {
         payoutRequests: pendingPayouts,
         refundRequests: pendingRefunds,
       },
+      overdue: { contractsWaitingSign3d: staleContracts, eventsPending2d: staleEvents, kycPending2d: staleKyc },
     },
   });
 });

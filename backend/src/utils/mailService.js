@@ -236,7 +236,39 @@ async function sendTicketEmail(toEmail, { buyerName, eventTitle, sessionName, st
   }
 }
 
+/** Email thông báo nghiệp vụ (duyệt KYC, duyệt sự kiện, hợp đồng, đối soát...). link là đường dẫn trong ứng dụng. */
+async function sendNotificationEmail(toEmail, { name, title, body, link }) {
+  if (!toEmail) return false;
+  const url = link ? CLIENT_URL.replace(/\/$/, "") + link : "";
+  const button = url
+    ? `<p><a href="${esc(url)}" style="display:inline-block;background:#09090b;color:#fff;padding:10px 20px;border-radius:999px;text-decoration:none">Mở EventTick</a></p>`
+    : "";
+  const mailOptions = {
+    from: FROM_EMAIL,
+    to: toEmail,
+    subject: `[EventTick] ${title}`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
+      <h3 style="margin-top:0">${esc(title)}</h3>
+      <p>Xin chào <strong>${esc(name || "bạn")}</strong>,</p>
+      <p>${esc(body)}</p>
+      ${button}
+      </div>`,
+  };
+  if (!transporter) {
+    console.log(`📧 [MÔ PHỎNG EMAIL THÔNG BÁO] Tới: ${toEmail} | ${title}`);
+    return true;
+  }
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (err) {
+    console.error(`❌ Gửi email thông báo thất bại (${toEmail}):`, err.message);
+    return false;
+  }
+}
+
 module.exports = {
+  sendNotificationEmail,
   sendTicketEmail,
   sendVerificationEmail,
   sendPasswordResetEmail,

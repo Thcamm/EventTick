@@ -12,7 +12,7 @@ const label = 'block text-xs font-semibold uppercase tracking-wider text-[#52525
  * Organizer tự dựng sơ đồ chỗ ngồi / chỗ đứng cho sự kiện của mình (không qua Admin).
  * Đầu vào: zone_map.svg (khu "SEC_…", sân khấu "STAGE_…") + seating_manifest.xlsx (khu, hàng, số ghế, sức chứa khu đứng GA).
  * "Kiểm tra trước" chạy thử và vẽ ra xem trước, chưa lưu gì.
- * canEdit=false khi sự kiện đã duyệt / mở bán: chỉ xem.
+ * canEdit=false khi sự kiện đã huỷ / kết thúc: chỉ xem. Đang mở bán mà đã có vé bán / đang giữ thì backend trả 409.
  */
 export default function SeatmapBuilder({ eventId, canEdit, onSaved }) {
   const { showToast } = useToast();
