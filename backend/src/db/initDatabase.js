@@ -1,6 +1,6 @@
 /**
  * Khởi tạo database EventTick trên MongoDB theo eventtick_database_specification.md
- * - Tạo 17 collections với $jsonSchema validator (kiểu dữ liệu, required, enum)
+ * - Tạo 18 collections với $jsonSchema validator (kiểu dữ liệu, required, enum)
  * - Tạo index (unique / FK lookup / TTL-like query)
  *
  * PK `xxx_id` trong spec được ánh xạ thành `_id` (ObjectId) của MongoDB.
@@ -407,7 +407,7 @@ const collections = {
 };
 
 // ---------- run ----------
-/** Tạo/cập nhật 17 collection + validator + index trên kết nối mongoose đang mở. */
+/** Tạo/cập nhật 18 collection + validator + index trên kết nối mongoose đang mở. */
 async function initDatabase(connection = mongoose.connection) {
   const db = connection.db;
 

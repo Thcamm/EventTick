@@ -30,7 +30,7 @@ Hệ thống chạy trên **MERN Stack (MongoDB, Express.js, React.js, Node.js)*
   5. E-Contract & Settlement: `contractController`, `contractService`, `adminController`
 
 * **Data Access & Infrastructure Layer:**
-    * **Primary Database:** **MongoDB** + **Mongoose** (17 collection, `$jsonSchema` validator và index tạo bởi `src/db/initDatabase.js`). **Chưa dùng Multi-Document Transaction** (cần Replica Set): tính toàn vẹn dựa vào cập nhật nguyên tử (`findOneAndUpdate` có điều kiện, unique index) và hoàn tác thủ công khi lỗi (xem mục 4.2).
+    * **Primary Database:** **MongoDB** + **Mongoose** (18 collection, `$jsonSchema` validator và index tạo bởi `src/db/initDatabase.js`). **Chưa dùng Multi-Document Transaction** (cần Replica Set): tính toàn vẹn dựa vào cập nhật nguyên tử (`findOneAndUpdate` có điều kiện, unique index) và hoàn tác thủ công khi lỗi (xem mục 4.2).
   * **Redis:** `ioredis` — khóa giữ ghế 10 phút (`TTL = 600s`, script Lua all-or-nothing). Redis tắt thì đặt ghế trả 503, các API còn lại vẫn chạy.
   * **Phòng chờ ảo:** có API (UC09), dùng Redis nếu sẵn có, không thì lưu trong RAM.
   * **Lưu trữ file:** **Cloudinary** (ảnh công khai; KYC / giấy phép / PDF hợp đồng ở chế độ riêng tư, tải qua link ký hết hạn 5 phút). Không cấu hình Cloudinary thì lưu cục bộ trong `backend/uploads/` và `backend/private-uploads/`.
@@ -225,8 +225,8 @@ EventTick/
 │   │   │                                   #   voucher, resale, contract, admin
 │   │   ├── services/                       # bookingService (giữ chỗ, hết hạn, phát vé), seatLockService (Redis),
 │   │   │                                   #   sepayService, contractService (PDF), privateStorage
-│   │   ├── models/                         # 17 model Mongoose (Event, EventSession, TicketTier, Seat, SeatmapLayout, Order...)
-│   │   ├── db/initDatabase.js              # Tạo 17 collection + $jsonSchema validator + index
+│   │   ├── models/                         # 18 model Mongoose (Event, EventSession, TicketTier, Seat, SeatmapLayout, Order...)
+│   │   ├── db/initDatabase.js              # Tạo 18 collection + $jsonSchema validator + index
 │   │   └── utils/                          # http, jwt, audit, upload, fileType, mailService, serializers, seed,
 │   │                                       #   seatGrid, seatmapTemplate
 │   ├── scripts/                            # test-*.js (kiểm thử), create-test-event.js, make-seatmap-samples.js
@@ -243,7 +243,7 @@ EventTick/
 │   └── package.json
 │
 ├── samples/seatmap/                        # File mẫu: zone_map.svg, seating_manifest.xlsx, preview.html
-├── eventtick_database_specification.md     # Đặc tả 17 bảng
+├── eventtick_database_specification.md     # Đặc tả 18 bảng
 └── eventtick_project_readme.md             # Tài liệu này
 ```
 
@@ -395,7 +395,7 @@ SMTP_PASS=
 ```bash
 cd backend
 npm install
-npm run db:init   # tạo 17 collection + validator + index trên database eventtick
+npm run db:init   # tạo 18 collection + validator + index trên database eventtick
 npm run seed      # (tuỳ chọn) nạp dữ liệu mẫu — XÓA dữ liệu nghiệp vụ cũ rồi nạp lại
 npm run dev       # chạy API tại http://localhost:3000 (route tiền tố /v1)
 ```
@@ -418,7 +418,7 @@ node scripts/create-test-event.js    # tạo sự kiện "test" có sơ đồ (s
 
 Mở link in ra ở cuối lệnh, đăng nhập `demo_user` / `123456`. Admin (`demo_admin`) dựng sơ đồ cho sự kiện khác ở `/admin/seatmap`; file mẫu tải tại `/v1/admin/seatmap/template.svg` và `/template.xlsx`.
 
-Chi tiết cấu trúc 17 bảng: xem [eventtick_database_specification.md](eventtick_database_specification.md).
+Chi tiết cấu trúc 18 bảng: xem [eventtick_database_specification.md](eventtick_database_specification.md).
 
 ---
 
