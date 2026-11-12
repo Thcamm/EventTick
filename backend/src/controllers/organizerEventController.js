@@ -483,6 +483,7 @@ exports.cancel = ah(async (req, res) => {
       releasedOrders: bulkResult.releasedPendingOrders,
       refundedCount: bulkResult.refundedOrdersCount,
       totalRefundAmount: bulkResult.totalRefundAmount,
+      refundedTicketsCount: bulkResult.refundedTicketsCount,
       notifiedBuyersCount: bulkResult.notifiedBuyersCount,
     });
   }
