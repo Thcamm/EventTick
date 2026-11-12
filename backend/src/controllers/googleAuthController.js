@@ -97,7 +97,7 @@ exports.callback = async (req, res) => {
 
     const token = signToken({ id: user._id.toString(), username: user.username || user.email, role: user.role });
     res.cookie("token", token, COOKIE_OPTS);
-    res.redirect(`${CLIENT_URL()}/auth/google/success`);
+    res.redirect(`${CLIENT_URL()}/auth/google/success?token=${encodeURIComponent(token)}`);
   } catch (err) {
     console.error("Google callback error:", err);
     fail(res, "server_error");
