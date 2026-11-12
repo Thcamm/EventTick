@@ -1197,7 +1197,7 @@ exports.listPayouts = ah(async (req, res) => {
       rejectionReason: s.rejection_reason,
       bankTransferReceiptUrl: s.bank_transfer_receipt_url,
       settledAt: s.settled_at,
-      createdAt: s.created_at,
+      createdAt: s.created_at || s._id.getTimestamp(),
     })),
   });
 });
