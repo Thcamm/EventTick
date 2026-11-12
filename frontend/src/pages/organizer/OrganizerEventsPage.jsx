@@ -22,6 +22,7 @@ export default function OrganizerEventsPage() {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submittingEvent, setSubmittingEvent] = useState(null);
   const [busy, setBusy] = useState('');
 
   const load = useCallback(async () => {
@@ -46,11 +47,19 @@ export default function OrganizerEventsPage() {
       const r = await api.post(`/organizer/events/${e._id}/${action}`, body || {});
       showToast(r.message || 'Thành công');
       await load();
+      return true;
     } catch (err) {
       showToast(err.message || 'Không thực hiện được');
+      return false;
     } finally {
       setBusy('');
     }
+  };
+
+  const submitEvent = async () => {
+    if (!submittingEvent) return;
+    const submitted = await act(submittingEvent, 'submit', null);
+    if (submitted) setSubmittingEvent(null);
   };
 
   const cancelEvent = (e) => {
@@ -131,7 +140,7 @@ export default function OrganizerEventsPage() {
                       <Tag size={13} /> Voucher
                     </Link>
                     {e.status === 'DRAFT' && (
-                      <button type='button' disabled={b('submit')} className='tb-btn tb-btn-solid tb-btn-sm' onClick={() => act(e, 'submit', 'Gửi sự kiện cho Admin duyệt?')}>
+                      <button type='button' disabled={b('submit')} className='tb-btn tb-btn-solid tb-btn-sm' onClick={() => setSubmittingEvent(e)}>
                         <Send size={13} /> {b('submit') ? 'Đang gửi...' : 'Gửi duyệt'}
                       </button>
                     )}
@@ -155,6 +164,23 @@ export default function OrganizerEventsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {submittingEvent && (
+        <div className='fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50' onClick={() => setSubmittingEvent(null)}>
+          <div className='bg-white rounded-2xl w-full max-w-md p-6 space-y-4' onClick={(event) => event.stopPropagation()}>
+            <h3 className='font-bold'>Gửi sự kiện &quot;{submittingEvent.title}&quot; để duyệt?</h3>
+            <p className='text-sm text-[#52525b]'>Sự kiện sẽ được chuyển đến Admin kiểm tra. Bạn có thể rút lại để chỉnh sửa nếu cần.</p>
+            <div className='flex gap-3'>
+              <button type='button' className='tb-btn tb-btn-solid' disabled={busy === `${submittingEvent._id}:submit`} onClick={submitEvent}>
+                Xác nhận gửi duyệt
+              </button>
+              <button type='button' className='tb-btn tb-btn-outline' disabled={busy === `${submittingEvent._id}:submit`} onClick={() => setSubmittingEvent(null)}>
+                Huỷ
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
