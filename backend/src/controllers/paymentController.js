@@ -1,4 +1,4 @@
-const { Order, Payment, Event, RefundRequest } = require("../models");
+const { Order, Payment, Event, RefundRequest, Ticket } = require("../models");
 const bookingService = require("../services/bookingService");
 const sepay = require("../services/sepayService");
 const { audit } = require("../utils/audit");
@@ -41,10 +41,16 @@ async function processOutgoingRefund(req, body, txId, amount) {
     return { success: true, message: "Không khớp yêu cầu hoàn tiền" };
   }
 
-  await Payment.updateOne(
-    { order_id: refund.order_id, status: "SUCCESS" },
-    { $set: { status: "REFUNDED" } },
-  );
+  const remainingTickets = await Ticket.exists({
+    order_id: refund.order_id,
+    status: { $in: ["VALID", "USED", "LISTED_RESALE"] },
+  });
+  if (!remainingTickets) {
+    await Payment.updateOne(
+      { order_id: refund.order_id, status: "SUCCESS" },
+      { $set: { status: "REFUNDED" } },
+    );
+  }
   await audit(req, "REFUND_WEBHOOK_COMPLETED", "refund_requests", refund._id, {
     transferRef,
     amount,

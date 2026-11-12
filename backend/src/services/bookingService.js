@@ -715,42 +715,58 @@ async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị hu�
     cancelledResaleCount = resaleRes.modifiedCount || 0;
   }
 
-  // 3. Hoàn tiền hàng loạt mọi đơn PAID của sự kiện
+  // 3. Hoàn tiền các vé chưa sử dụng của mọi đơn PAID.
   const paidOrders = await Order.find({ event_id: e._id, status: "PAID" }).populate("buyer_id", "email full_name username");
 
   let refundedCount = 0;
+  let refundedTicketsCount = 0;
   let totalRefundAmount = 0;
   let notifiedBuyersCount = 0;
 
   for (const order of paidOrders) {
-    order.status = "REFUNDED";
-    await order.save();
+    const refundableTickets = await Ticket.find({
+      order_id: order._id,
+      status: { $in: ["VALID", "LISTED_RESALE"] },
+    });
+    if (!refundableTickets.length) continue;
 
-    await Ticket.updateMany(
-      { order_id: order._id, status: { $in: ["VALID", "LISTED_RESALE"] } },
-      { status: "REFUNDED" },
+    const lineByTier = new Map((order.items_snapshot || []).map((item) => [String(item.tier_id), item]));
+    const refundableGross = refundableTickets.reduce(
+      (sum, ticket) => sum + Number(lineByTier.get(String(ticket.tier_id))?.unit_price || 0),
+      0,
     );
+    const subtotal = Number(order.subtotal_amount || 0);
+    const discount = Number(order.discount_amount || 0);
+    const refundAmount = Math.max(
+      0,
+      Math.min(
+        Number(order.total_amount || 0),
+        Math.round(refundableGross - (subtotal ? (discount * refundableGross) / subtotal : 0)),
+      ),
+    );
+    if (!refundAmount) continue;
 
-    if (order.seat_ids?.length) {
-      await Seat.updateMany(
-        { _id: { $in: order.seat_ids } },
-        { $set: { status: "AVAILABLE" }, $unset: { locked_by_user_id: 1, lock_expires_at: 1 } },
-      );
-    }
-    if (order.items?.length) {
-      await restoreStock(order.items);
+    await Ticket.updateMany({ _id: { $in: refundableTickets.map((ticket) => ticket._id) } }, { status: "REFUNDED" });
+    const remainingTickets = await Ticket.exists({
+      order_id: order._id,
+      status: { $in: ["VALID", "USED", "LISTED_RESALE"] },
+    });
+    if (!remainingTickets) {
+      await Order.updateOne({ _id: order._id, status: "PAID" }, { status: "REFUNDED" });
     }
 
     await RefundRequest.findOneAndUpdate(
-      { order_id: order._id, refund_type: "EVENT_BULK_REFUND" },
+      { order_id: order._id, refund_type: "EVENT_BULK_REFUND", status: { $ne: "COMPLETED" } },
       {
+        $set: {
+          refund_amount: refundAmount,
+          reason,
+          status: "PROCESSING",
+        },
         $setOnInsert: {
           order_id: order._id,
           user_id: order.buyer_id?._id || order.buyer_id,
           refund_type: "EVENT_BULK_REFUND",
-          refund_amount: order.total_amount,
-          reason,
-          status: "PROCESSING",
         },
       },
       { upsert: true, new: true },
@@ -763,19 +779,21 @@ async function bulkRefundAndCancelEvent(eventId, reason = "Sự kiện bị hu�
         buyerName,
         eventTitle: e.title,
         orderCode: order.order_code,
-        refundAmount: order.total_amount,
+        refundAmount,
         reason,
       });
       if (sent) notifiedBuyersCount++;
     }
 
     refundedCount++;
-    totalRefundAmount += order.total_amount;
+    refundedTicketsCount += refundableTickets.length;
+    totalRefundAmount += refundAmount;
   }
 
   return {
     event: e,
     refundedOrdersCount: refundedCount,
+    refundedTicketsCount,
     totalRefundAmount,
     releasedPendingOrders,
     cancelledResaleCount,
