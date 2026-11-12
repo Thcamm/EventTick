@@ -227,12 +227,9 @@ export default function MainLayout() {
 
           {/* Nav links */}
           <nav className='header-nav'>
-            <Link to={PATHS.HOME} className='nav-link'>
-              <span>TicketStars</span>
-              <span className='badge-pill-hot'>HOT</span>
-            </Link>
             <Link to={PATHS.RESALE} className='nav-link'>
-              Bán lại vé
+              <span>Bán lại vé</span>
+              <span className='badge-pill-hot'>HOT</span>
             </Link>
           </nav>
 
@@ -404,51 +401,10 @@ export default function MainLayout() {
                 </li>
               </ul>
             </div>
-
-            <div>
-              <h4 className='footer-heading'>Kết nối &amp; Ứng dụng</h4>
-              <p style={{ fontSize: '13px', color: '#71717a', marginBottom: '12px' }}>
-                Tải ứng dụng EventTick trên iOS và Android để quản lý vé tiện lợi mọi lúc mọi nơi.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button
-                  type='button'
-                  className='tb-btn tb-btn-outline tb-btn-sm'
-                  style={{ background: '#18181b', borderColor: '#27272a', color: '#fff', justifyContent: 'flex-start' }}
-                  onClick={() => showToast('Chuyển hướng đến App Store')}>
-                  <Smartphone size={15} />
-                  <span>Tải trên App Store</span>
-                </button>
-                <button
-                  type='button'
-                  className='tb-btn tb-btn-outline tb-btn-sm'
-                  style={{ background: '#18181b', borderColor: '#27272a', color: '#fff', justifyContent: 'flex-start' }}
-                  onClick={() => showToast('Chuyển hướng đến Google Play')}>
-                  <PlayCircle size={15} />
-                  <span>Tải trên Google Play</span>
-                </button>
-              </div>
-              <div className='footer-social-row'>
-                <button type='button' className='footer-social-btn' onClick={() => showToast('Facebook EventTick')}>
-                  <Globe size={16} />
-                </button>
-                <button type='button' className='footer-social-btn' onClick={() => showToast('Instagram EventTick')}>
-                  <AtSign size={16} />
-                </button>
-                <button type='button' className='footer-social-btn' onClick={() => showToast('TikTok EventTick')}>
-                  <Music size={16} />
-                </button>
-                <button type='button' className='footer-social-btn' onClick={() => showToast('LinkedIn EventTick')}>
-                  <Share2 size={16} />
-                </button>
-              </div>
-            </div>
           </div>
 
           <div className='footer-bottom items-center justify-center text-center'>
-            <div>
-              &copy; 2026 EventTick Company Limited. Giấy chứng nhận ĐKKD số 0313605444 do Sở KH&amp;ĐT TP.HCM cấp.
-            </div>
+            <div>&copy; 2026 EventTick Company Limited. Giấy chứng nhận ĐKKD số 12345678.</div>
           </div>
         </div>
       </footer>
