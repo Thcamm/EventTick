@@ -183,6 +183,7 @@ exports.login = async (req, res) => {
     res.json({
       success: true,
       message: "Đăng nhập thành công",
+      token,
       user: userToClient(user),
     });
   } catch (err) {
