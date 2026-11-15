@@ -6,17 +6,48 @@ const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 let transporter;
 
 if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === "true", // true cho port 465, false cho 587
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const cleanPass = String(process.env.SMTP_PASS).replace(/\s+/g, "");
+  const isGmail = host.toLowerCase().includes("gmail");
+
+  if (isGmail) {
+    // Với Gmail trên môi trường Cloud (Render, Heroku...), service: "gmail" (Port 465 SSL)
+    // ổn định hơn nhiều so với Port 587 STARTTLS (thường bị firewall/IPv6 timeout).
+    transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: cleanPass,
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+  } else {
+    transporter = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: cleanPass,
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+  }
+
+  transporter.verify((err) => {
+    if (err) {
+      console.error("❌ [SMTP ERROR] Kết nối gửi email thất bại:", err.message);
+    } else {
+      console.log("✅ [SMTP READY] Hệ thống gửi mail đã kết nối thành công tới máy chủ");
+    }
   });
 } else {
   // Chế độ DEV: in trực tiếp ra console nếu chưa điền key SMTP
+  console.warn("⚠️ [SMTP DISABLED] Chưa cấu hình SMTP_USER hoặc SMTP_PASS. Email sẽ chỉ chạy ở chế độ mô phỏng log.");
   transporter = null;
 }
 
