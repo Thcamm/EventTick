@@ -195,8 +195,72 @@ async function sendEventCancellationRefundEmail(toEmail, { buyerName, eventTitle
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 /**
+ * Sinh file PDF vé điện tử có font tiếng Việt và mã QR.
+ */
+async function generateTicketPdf({ buyerName, eventTitle, sessionName, startTime, venue, orderCode, totalAmount, tickets }) {
+  const QRCode = require("qrcode");
+  const PDFDocument = require("pdfkit");
+  const path = require("path");
+  const FONT_DIR = path.join(path.dirname(require.resolve("dejavu-fonts-ttf/package.json")), "ttf");
+
+  return new Promise(async (resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      const chunks = [];
+      doc.on("data", (c) => chunks.push(c));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+
+      doc.registerFont("vn", path.join(FONT_DIR, "DejaVuSans.ttf"));
+      doc.registerFont("vn-bold", path.join(FONT_DIR, "DejaVuSans-Bold.ttf"));
+
+      const when = startTime ? new Date(startTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "";
+
+      for (let i = 0; i < tickets.length; i++) {
+        if (i > 0) doc.addPage();
+        const t = tickets[i];
+        const qrBuffer = await QRCode.toBuffer(t.qrData, { width: 300, margin: 1 });
+
+        doc.font("vn-bold").fontSize(20).fillColor("#09090b").text("VÉ ĐIỆN TỬ / E-TICKET", { align: "center" });
+        doc.moveDown(0.3).font("vn").fontSize(11).fillColor("#71717a").text(`EventTick Platform • Mã đơn: ${orderCode}`, { align: "center" });
+        doc.moveDown(0.8);
+
+        doc.strokeColor("#e4e4e7").lineWidth(1).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+        doc.moveDown(1);
+
+        doc.font("vn-bold").fontSize(16).fillColor("#09090b").text(eventTitle || "Sự kiện");
+        doc.moveDown(0.5);
+
+        doc.font("vn").fontSize(11).fillColor("#3f3f46");
+        doc.text(`Suất diễn: ${sessionName || "Tiêu chuẩn"} (${when})`);
+        doc.moveDown(0.3);
+        doc.text(`Địa điểm: ${venue || "Chưa cập nhật"}`);
+        doc.moveDown(0.3);
+        doc.text(`Người mua: ${buyerName || "Quý khách"}`);
+        doc.moveDown(0.3);
+        doc.text(`Hạng vé: ${t.tierName}${t.seatLabel ? ` — ${t.seatLabel}` : ""}`);
+        doc.moveDown(0.3);
+        doc.font("vn-bold").fillColor("#09090b").text(`Mã vé: ${t.code}`);
+        doc.moveDown(1);
+
+        const qrTop = doc.y;
+        doc.image(qrBuffer, 197.5, qrTop, { width: 200, height: 200 });
+        doc.y = qrTop + 210;
+
+        doc.font("vn").fontSize(9).fillColor("#71717a").text("Xuất trình mã QR này tại cổng soát vé để vào sự kiện.", { align: "center" });
+        doc.text("Mã QR được mã hóa bảo mật chống giả mạo. Vui lòng không chia sẻ cho người khác.", { align: "center" });
+      }
+
+      doc.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+/**
  * Gửi email vé điện tử sau khi thanh toán. tickets: [{ code, tierName, seatLabel, qrData }]
- * QR đính kèm dạng CID để hiển thị trong mọi trình đọc mail.
+ * Đính kèm cả file PDF vé điện tử (UC24) và QR dạng CID để hiển thị trực tiếp trong email.
  */
 async function sendTicketEmail(toEmail, { buyerName, eventTitle, sessionName, startTime, venue, orderCode, totalAmount, tickets }) {
   if (!toEmail) return false;
@@ -209,6 +273,19 @@ async function sendTicketEmail(toEmail, { buyerName, eventTitle, sessionName, st
     attachments.push({ filename: `${t.code}.png`, content: await QRCode.toBuffer(t.qrData, { width: 240, margin: 1 }), cid });
     rows.push(`<tr><td style="padding:12px;border-bottom:1px solid #e5e7eb"><strong>${esc(t.tierName)}</strong>${t.seatLabel ? " — " + esc(t.seatLabel) : ""}<br><span style="font-family:monospace;color:#6b7280">${esc(t.code)}</span></td><td style="padding:12px;border-bottom:1px solid #e5e7eb;text-align:right"><img src="cid:${cid}" width="120" height="120" alt="QR"></td></tr>`);
   }
+
+  // Đính kèm file PDF vé điện tử
+  try {
+    const pdfBuffer = await generateTicketPdf({ buyerName, eventTitle, sessionName, startTime, venue, orderCode, totalAmount, tickets });
+    attachments.push({
+      filename: `Ve-dien-tu-${orderCode}.pdf`,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+    });
+  } catch (pdfErr) {
+    console.warn("⚠️ Không thể sinh file PDF vé:", pdfErr.message);
+  }
+
   const when = startTime ? new Date(startTime).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "";
   const mailOptions = {
     from: FROM_EMAIL,
@@ -219,7 +296,7 @@ async function sendTicketEmail(toEmail, { buyerName, eventTitle, sessionName, st
       <p>Xin chào <strong>${esc(buyerName || "Quý khách")}</strong>, vé của bạn cho <strong>${esc(eventTitle)}</strong> đã sẵn sàng.</p>
       <ul><li>Mã đơn: <strong>${esc(orderCode)}</strong></li><li>Suất: ${esc(sessionName)} ${esc(when)}</li><li>Địa điểm: ${esc(venue)}</li><li>Tổng tiền: ${Number(totalAmount || 0).toLocaleString("vi-VN")} VNĐ</li></ul>
       <table style="width:100%;border-collapse:collapse">${rows.join("")}</table>
-      <p style="color:#6b7280;font-size:13px">Xuất trình mã QR trên điện thoại tại cổng. Không chia sẻ mã QR cho người khác.</p></div>`,
+      <p style="color:#6b7280;font-size:13px">Hệ thống đã đính kèm tệp PDF vé điện tử trong email này. Bạn có thể xuất trình file PDF hoặc mã QR trên điện thoại tại cổng. Không chia sẻ mã QR cho người khác.</p></div>`,
     attachments,
   };
   if (!transporter) {

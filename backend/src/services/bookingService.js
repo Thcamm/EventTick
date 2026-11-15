@@ -436,7 +436,9 @@ async function confirmPaymentAndIssueTickets({ orderId, buyerId, gateway = "VNPA
 
   if (claimed.order_type === "RESALE") {
     const tickets = await issueResaleTickets(claimed);
-    ticketMail.sendTicketEmailForOrder(claimed, tickets);
+    await ticketMail.sendTicketEmailForOrder(claimed, tickets).catch((err) => {
+      console.error("❌ Lỗi gửi email vé resale:", err.message);
+    });
     return { order: claimed, payment, tickets };
   }
 
@@ -467,7 +469,9 @@ async function confirmPaymentAndIssueTickets({ orderId, buyerId, gateway = "VNPA
     }
   }
   const tickets = await Ticket.insertMany(docs);
-  ticketMail.sendTicketEmailForOrder(claimed, tickets);
+  await ticketMail.sendTicketEmailForOrder(claimed, tickets).catch((err) => {
+    console.error("❌ Lỗi gửi email vé:", err.message);
+  });
 
   return { order: claimed, payment, tickets };
 }

@@ -12,11 +12,26 @@ async function sendTicketEmailForOrder(order, tickets) {
       TicketTier.find({ _id: { $in: tickets.map((t) => t.tier_id) } }).select("name"),
       Seat.find({ _id: { $in: tickets.map((t) => t.seat_id).filter(Boolean) } }).select("row_label seat_number"),
     ]);
-    if (!buyer?.email) return false;
+    let targetEmail = buyer?.email;
+    if (!targetEmail && Array.isArray(order.attendee_form_answers)) {
+      const emailField = order.attendee_form_answers.find(
+        (a) => typeof a?.value === "string" && a.value.includes("@"),
+      );
+      if (emailField) targetEmail = emailField.value.trim();
+    }
+    if (!targetEmail && order.vat_invoice_info?.email) {
+      targetEmail = String(order.vat_invoice_info.email).trim();
+    }
+
+    if (!targetEmail) {
+      console.warn(`⚠️ [ticketMail] Đơn ${order.order_code}: Không tìm thấy email của người mua (buyer_id: ${order.buyer_id})`);
+      return false;
+    }
+
     const tierName = new Map(tiers.map((t) => [String(t._id), t.name]));
     const seatLabel = new Map(seats.map((s) => [String(s._id), `Hàng ${s.row_label} - Ghế ${s.seat_number}`]));
-    return await mailService.sendTicketEmail(buyer.email, {
-      buyerName: buyer.full_name,
+    const ok = await mailService.sendTicketEmail(targetEmail, {
+      buyerName: buyer?.full_name || "Quý khách",
       eventTitle: event?.title,
       sessionName: session?.name,
       startTime: session?.start_time,
@@ -30,6 +45,10 @@ async function sendTicketEmailForOrder(order, tickets) {
         qrData: `${t.ticket_code}.${t.qr_hash_signature}`,
       })),
     });
+    if (ok) {
+      console.log(`✅ [ticketMail] Đã gửi email vé đơn ${order.order_code} tới ${targetEmail}`);
+    }
+    return ok;
   } catch (err) {
     console.error("Gửi email vé lỗi:", err.message);
     return false;
